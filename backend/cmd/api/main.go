@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // restaurant timezones must resolve even where the OS has no tz database
 
 	"tabletalk/backend/internal/auth"
 	"tabletalk/backend/internal/config"
@@ -16,6 +17,8 @@ import (
 	"tabletalk/backend/internal/handler"
 	"tabletalk/backend/internal/middleware"
 	"tabletalk/backend/internal/repository"
+	"tabletalk/backend/internal/service"
+	"tabletalk/backend/internal/storage"
 )
 
 func main() {
@@ -41,11 +44,17 @@ func run() error {
 	defer pool.Close()
 
 	verifier := auth.NewKeycloakVerifier(ctx, cfg.OIDCIssuerURL, cfg.OIDCAudience)
-	users := repository.NewUserRepository(pool)
+	store := repository.NewStore(pool)
+	files, err := storage.NewLocal(cfg.UploadDir, cfg.PublicBaseURL+"/uploads")
+	if err != nil {
+		return err
+	}
 
 	router := handler.NewRouter(handler.Deps{
-		DB:   pool,
-		Auth: middleware.NewAuthenticator(verifier, users),
+		DB:          pool,
+		Auth:        middleware.NewAuthenticator(verifier, store),
+		Restaurants: handler.NewRestaurantHandler(service.NewRestaurantService(store, files, time.Now)),
+		Uploads:     files.Handler(),
 	})
 
 	srv := &http.Server{

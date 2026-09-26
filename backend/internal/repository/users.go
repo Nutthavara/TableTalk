@@ -3,22 +3,12 @@ package repository
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"tabletalk/backend/internal/auth"
 )
 
-type UserRepository struct {
-	db *pgxpool.Pool
-}
-
-func NewUserRepository(db *pgxpool.Pool) *UserRepository {
-	return &UserRepository{db: db}
-}
-
 // SyncUser upserts the profile from a verified token; the row is only rewritten when a field changed.
-func (r *UserRepository) SyncUser(ctx context.Context, id auth.Identity) error {
-	_, err := r.db.Exec(ctx, `
+func (q *Queries) SyncUser(ctx context.Context, id auth.Identity) error {
+	_, err := q.db.Exec(ctx, `
 		INSERT INTO users (id, username, display_name, email)
 		VALUES ($1, $2, $3, NULLIF($4, ''))
 		ON CONFLICT (id) DO UPDATE
