@@ -10,9 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"tabletalk/backend/internal/auth"
 	"tabletalk/backend/internal/config"
 	"tabletalk/backend/internal/database"
 	"tabletalk/backend/internal/handler"
+	"tabletalk/backend/internal/middleware"
+	"tabletalk/backend/internal/repository"
 )
 
 func main() {
@@ -37,12 +40,17 @@ func run() error {
 	}
 	defer pool.Close()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handler.Health(pool))
+	verifier := auth.NewKeycloakVerifier(ctx, cfg.OIDCIssuerURL, cfg.OIDCAudience)
+	users := repository.NewUserRepository(pool)
+
+	router := handler.NewRouter(handler.Deps{
+		DB:   pool,
+		Auth: middleware.NewAuthenticator(verifier, users),
+	})
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           mux,
+		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
