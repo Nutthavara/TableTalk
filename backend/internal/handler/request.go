@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -45,6 +46,18 @@ func jsonErrorMessage(err error) string {
 	default:
 		return "Request body must be valid JSON."
 	}
+}
+
+// queryInt parses an optional integer query parameter, returning fallback only when it is absent.
+func queryInt(raw, name string, fallback int, details map[string]string) int {
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		details[name] = "Must be a whole number."
+	}
+	return n
 }
 
 // pathID parses a UUID path parameter; malformed IDs are reported as not found.

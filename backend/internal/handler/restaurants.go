@@ -99,6 +99,37 @@ func (h *RestaurantHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.toJSON(r, m))
 }
 
+type pageJSON[T any] struct {
+	Items      []T `json:"items"`
+	Page       int `json:"page"`
+	PageSize   int `json:"page_size"`
+	Total      int `json:"total"`
+	TotalPages int `json:"total_pages"`
+}
+
+func newPage[T any](items []T, page, pageSize, total int) pageJSON[T] {
+	return pageJSON[T]{Items: items, Page: page, PageSize: pageSize, Total: total, TotalPages: (total + pageSize - 1) / pageSize}
+}
+
+// List handles GET /api/restaurants?sort=rating|reviews&page=1&page_size=12.
+func (h *RestaurantHandler) List(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	details := map[string]string{}
+	page := queryInt(q.Get("page"), "page", 1, details)
+	pageSize := queryInt(q.Get("page_size"), "page_size", service.DefaultPageSize, details)
+	if len(details) > 0 {
+		apperr.Write(w, r, apperr.Validation(details))
+		return
+	}
+
+	result, err := h.svc.List(r.Context(), service.ListRestaurantsParams{Sort: q.Get("sort"), Page: page, PageSize: pageSize})
+	if err != nil {
+		apperr.Write(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newPage(h.list(r, result.Items), result.Page, result.PageSize, result.Total))
+}
+
 func (h *RestaurantHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 	user, err := identity(r)
 	if err != nil {

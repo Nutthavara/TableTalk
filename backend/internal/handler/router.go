@@ -24,6 +24,7 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("GET /api/me", required(Me))
 
 	rh := d.Restaurants
+	mux.Handle("GET /api/restaurants", optional(rh.List))
 	mux.Handle("GET /api/restaurants/{id}", optional(rh.Get))
 	mux.Handle("POST /api/restaurants", required(rh.Create))
 	mux.Handle("PUT /api/restaurants/{id}", required(rh.Update))

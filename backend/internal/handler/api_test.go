@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +39,7 @@ type testAPI struct {
 
 func newTestAPI(t *testing.T) *testAPI {
 	t.Helper()
+	slog.SetDefault(slog.New(slog.DiscardHandler)) // keep request logs out of test output
 	db := testutil.DB(t, "handler")
 	store := repository.NewStore(db)
 	files, err := storage.NewLocal(t.TempDir(), "http://api.test/uploads")

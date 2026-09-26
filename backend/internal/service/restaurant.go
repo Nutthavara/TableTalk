@@ -397,3 +397,56 @@ func validTimezone(name string) bool {
 	_, err := time.LoadLocation(name)
 	return err == nil
 }
+
+const (
+	DefaultPageSize = 12
+	MaxPageSize     = 50
+)
+
+type ListRestaurantsParams struct {
+	Sort     string
+	Page     int
+	PageSize int
+}
+
+type RestaurantPage struct {
+	Items    []model.Restaurant
+	Page     int
+	PageSize int
+	Total    int
+}
+
+// List returns one page of all restaurants. An empty Sort means highest rating first.
+func (s *RestaurantService) List(ctx context.Context, p ListRestaurantsParams) (RestaurantPage, error) {
+	sort := repository.RestaurantSort(p.Sort)
+	if p.Sort == "" {
+		sort = repository.SortHighestRating
+	}
+
+	details := map[string]string{}
+	if sort != repository.SortHighestRating && sort != repository.SortMostReviewed {
+		details["sort"] = `Sort must be "rating" or "reviews".`
+	}
+	if p.Page < 1 {
+		details["page"] = "Page must be 1 or greater."
+	}
+	if p.PageSize < 1 || p.PageSize > MaxPageSize {
+		details["page_size"] = fmt.Sprintf("Page size must be between 1 and %d.", MaxPageSize)
+	}
+	if len(details) > 0 {
+		return RestaurantPage{}, apperr.Validation(details)
+	}
+
+	total, err := s.store.CountRestaurants(ctx)
+	if err != nil {
+		return RestaurantPage{}, err
+	}
+	items, err := s.store.ListRestaurants(ctx, sort, p.PageSize, (p.Page-1)*p.PageSize)
+	if err != nil {
+		return RestaurantPage{}, err
+	}
+	if items == nil {
+		items = []model.Restaurant{}
+	}
+	return RestaurantPage{Items: items, Page: p.Page, PageSize: p.PageSize, Total: total}, nil
+}

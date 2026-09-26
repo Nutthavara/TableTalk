@@ -195,3 +195,31 @@ func (q *Queries) DeleteImage(ctx context.Context, restaurantID, imageID uuid.UU
 	}
 	return err
 }
+
+type RestaurantSort string
+
+const (
+	SortHighestRating RestaurantSort = "rating"
+	SortMostReviewed  RestaurantSort = "reviews"
+)
+
+// Deterministic orderings; restaurants without reviews sort after rated ones. Ratings are compared
+// at the displayed precision (1 decimal) so equal-looking ratings fall through to the tie-breakers.
+var restaurantOrderBy = map[RestaurantSort]string{
+	SortHighestRating: `ROUND(s.avg_rating, 1) DESC NULLS LAST, s.review_count DESC, r.id ASC`,
+	SortMostReviewed:  `s.review_count DESC, ROUND(s.avg_rating, 1) DESC NULLS LAST, r.id ASC`,
+}
+
+func (q *Queries) ListRestaurants(ctx context.Context, sort RestaurantSort, limit, offset int) ([]model.Restaurant, error) {
+	orderBy, ok := restaurantOrderBy[sort]
+	if !ok {
+		return nil, fmt.Errorf("unknown sort %q", sort)
+	}
+	return q.listRestaurants(ctx, restaurantSelect+` ORDER BY `+orderBy+` LIMIT $1 OFFSET $2`, limit, offset)
+}
+
+func (q *Queries) CountRestaurants(ctx context.Context) (int, error) {
+	var n int
+	err := q.db.QueryRow(ctx, `SELECT COUNT(*) FROM restaurants`).Scan(&n)
+	return n, err
+}
