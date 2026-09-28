@@ -50,11 +50,13 @@ func run() error {
 		return err
 	}
 
+	reviews := service.NewReviewService(store)
 	router := handler.NewRouter(handler.Deps{
 		DB:           pool,
 		Auth:         middleware.NewAuthenticator(verifier, store),
-		Restaurants:  handler.NewRestaurantHandler(service.NewRestaurantService(store, files, time.Now)),
+		Restaurants:  handler.NewRestaurantHandler(service.NewRestaurantService(store, files, time.Now), reviews),
 		Reservations: handler.NewReservationHandler(service.NewReservationService(store, time.Now)),
+		Reviews:      handler.NewReviewHandler(reviews),
 		Uploads:      files.Handler(),
 	})
 

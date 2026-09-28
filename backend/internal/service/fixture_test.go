@@ -36,6 +36,7 @@ type fixture struct {
 	store        *repository.Store
 	now          time.Time
 	reservations *ReservationService
+	reviews      *ReviewService
 	alice, bob   auth.Identity
 	carol        auth.Identity
 }
@@ -55,6 +56,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	clock := func() time.Time { return f.now }
 	f.reservations = NewReservationService(f.store, clock)
+	f.reviews = NewReviewService(f.store)
 	for _, u := range []auth.Identity{f.alice, f.bob, f.carol} {
 		if err := f.store.SyncUser(f.ctx, u); err != nil {
 			t.Fatal(err)

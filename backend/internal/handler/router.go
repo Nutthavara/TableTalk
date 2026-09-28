@@ -12,6 +12,7 @@ type Deps struct {
 	Auth         *middleware.Authenticator
 	Restaurants  *RestaurantHandler
 	Reservations *ReservationHandler
+	Reviews      *ReviewHandler
 	// Uploads serves stored images in development (local storage).
 	Uploads http.Handler
 }
@@ -40,6 +41,12 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("GET /api/reservations/{id}", required(resv.Get))
 	mux.Handle("PUT /api/reservations/{id}", required(resv.Update))
 	mux.Handle("DELETE /api/reservations/{id}", required(resv.Cancel))
+
+	rv := d.Reviews
+	mux.Handle("GET /api/restaurants/{id}/reviews", optional(rv.List))
+	mux.Handle("POST /api/restaurants/{id}/reviews", required(rv.Create))
+	mux.Handle("PUT /api/reviews/{id}", required(rv.Update))
+	mux.Handle("DELETE /api/reviews/{id}", required(rv.Delete))
 
 	if d.Uploads != nil {
 		mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", d.Uploads))

@@ -19,11 +19,12 @@ import (
 const maxMultipartBody = service.MaxImagesPerRestaurant*service.MaxImageBytes + 1<<20
 
 type RestaurantHandler struct {
-	svc *service.RestaurantService
+	svc     *service.RestaurantService
+	reviews *service.ReviewService
 }
 
-func NewRestaurantHandler(svc *service.RestaurantService) *RestaurantHandler {
-	return &RestaurantHandler{svc: svc}
+func NewRestaurantHandler(svc *service.RestaurantService, reviews *service.ReviewService) *RestaurantHandler {
+	return &RestaurantHandler{svc: svc, reviews: reviews}
 }
 
 type imageJSON struct {
@@ -47,8 +48,10 @@ type restaurantJSON struct {
 	AverageRating           *float64    `json:"average_rating"`
 	ReviewCount             int         `json:"review_count"`
 	IsOwner                 bool        `json:"is_owner"`
-	CreatedAt               time.Time   `json:"created_at"`
-	UpdatedAt               time.Time   `json:"updated_at"`
+	// MyReviewID is the viewer's review of this restaurant (detail endpoint only).
+	MyReviewID *string   `json:"my_review_id,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 func (h *RestaurantHandler) toJSON(r *http.Request, m model.Restaurant) restaurantJSON {
@@ -96,7 +99,19 @@ func (h *RestaurantHandler) Get(w http.ResponseWriter, r *http.Request) {
 		apperr.Write(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, h.toJSON(r, m))
+	out := h.toJSON(r, m)
+	if viewer, ok := auth.FromContext(r.Context()); ok {
+		reviewID, err := h.reviews.MyReviewID(r.Context(), viewer, id)
+		if err != nil {
+			apperr.Write(w, r, err)
+			return
+		}
+		if reviewID != nil {
+			s := reviewID.String()
+			out.MyReviewID = &s
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type pageJSON[T any] struct {
