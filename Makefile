@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: up down reset-infra migrate migrate-down migrate-test api test web lint
+.PHONY: up down reset-infra migrate migrate-down api test web lint
 
 up: ## Start Postgres and Keycloak
 	docker compose up -d
@@ -19,13 +19,10 @@ migrate:
 migrate-down:
 	cd backend && go run ./cmd/migrate down
 
-migrate-test:
-	cd backend && DATABASE_URL=$(TEST_DATABASE_URL) go run ./cmd/migrate up
-
 api:
 	cd backend && go run ./cmd/api
 
-test:
+test: ## Needs Postgres running (make up); uses TEST_DATABASE_URL from .env
 	cd backend && go test -race ./...
 
 web:
