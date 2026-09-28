@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"tabletalk/backend/internal/apperr"
 	"tabletalk/backend/internal/middleware"
@@ -17,45 +18,81 @@ type Deps struct {
 	Uploads http.Handler
 }
 
+type AuthMode int
+
+const (
+	// Public routes accept a token when present (to personalise results) but never require one.
+	Public AuthMode = iota
+	Required
+)
+
+type Route struct {
+	Method  string
+	Path    string
+	Auth    AuthMode
+	handler http.HandlerFunc
+}
+
+// Routes is the complete API surface. Tests iterate over it to check that every route that is not
+// a read requires authentication.
+func Routes(d Deps) []Route {
+	rh, resv, rv := d.Restaurants, d.Reservations, d.Reviews
+	return []Route{
+		{http.MethodGet, "/api/me", Required, Me},
+
+		{http.MethodGet, "/api/restaurants", Public, rh.List},
+		{http.MethodGet, "/api/restaurants/{id}", Public, rh.Get},
+		{http.MethodPost, "/api/restaurants", Required, rh.Create},
+		{http.MethodPut, "/api/restaurants/{id}", Required, rh.Update},
+		{http.MethodDelete, "/api/restaurants/{id}", Required, rh.Delete},
+		{http.MethodPost, "/api/restaurants/{id}/images", Required, rh.AddImages},
+		{http.MethodDelete, "/api/restaurants/{id}/images/{imageId}", Required, rh.DeleteImage},
+		{http.MethodGet, "/api/me/restaurants", Required, rh.ListMine},
+
+		{http.MethodPost, "/api/restaurants/{id}/reservations", Required, resv.Create},
+		{http.MethodGet, "/api/me/reservations", Required, resv.ListMine},
+		{http.MethodGet, "/api/reservations/{id}", Required, resv.Get},
+		{http.MethodPut, "/api/reservations/{id}", Required, resv.Update},
+		{http.MethodDelete, "/api/reservations/{id}", Required, resv.Cancel},
+
+		{http.MethodGet, "/api/restaurants/{id}/reviews", Public, rv.List},
+		{http.MethodPost, "/api/restaurants/{id}/reviews", Required, rv.Create},
+		{http.MethodPut, "/api/reviews/{id}", Required, rv.Update},
+		{http.MethodDelete, "/api/reviews/{id}", Required, rv.Delete},
+	}
+}
+
 func NewRouter(d Deps) http.Handler {
 	mux := http.NewServeMux()
-	required := func(h http.HandlerFunc) http.Handler { return d.Auth.Required(h) }
-	optional := func(h http.HandlerFunc) http.Handler { return d.Auth.Optional(h) }
-
 	mux.HandleFunc("GET /healthz", Health(d.DB))
-	mux.Handle("GET /api/me", required(Me))
 
-	rh := d.Restaurants
-	mux.Handle("GET /api/restaurants", optional(rh.List))
-	mux.Handle("GET /api/restaurants/{id}", optional(rh.Get))
-	mux.Handle("POST /api/restaurants", required(rh.Create))
-	mux.Handle("PUT /api/restaurants/{id}", required(rh.Update))
-	mux.Handle("DELETE /api/restaurants/{id}", required(rh.Delete))
-	mux.Handle("POST /api/restaurants/{id}/images", required(rh.AddImages))
-	mux.Handle("DELETE /api/restaurants/{id}/images/{imageId}", required(rh.DeleteImage))
-	mux.Handle("GET /api/me/restaurants", required(rh.ListMine))
-
-	resv := d.Reservations
-	mux.Handle("POST /api/restaurants/{id}/reservations", required(resv.Create))
-	mux.Handle("GET /api/me/reservations", required(resv.ListMine))
-	mux.Handle("GET /api/reservations/{id}", required(resv.Get))
-	mux.Handle("PUT /api/reservations/{id}", required(resv.Update))
-	mux.Handle("DELETE /api/reservations/{id}", required(resv.Cancel))
-
-	rv := d.Reviews
-	mux.Handle("GET /api/restaurants/{id}/reviews", optional(rv.List))
-	mux.Handle("POST /api/restaurants/{id}/reviews", required(rv.Create))
-	mux.Handle("PUT /api/reviews/{id}", required(rv.Update))
-	mux.Handle("DELETE /api/reviews/{id}", required(rv.Delete))
+	for _, rt := range Routes(d) {
+		var h http.Handler = rt.handler
+		if rt.Auth == Required {
+			h = d.Auth.Required(h)
+		} else {
+			h = d.Auth.Optional(h)
+		}
+		mux.Handle(rt.Method+" "+rt.Path, h)
+	}
 
 	if d.Uploads != nil {
 		mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", d.Uploads))
 	}
 
-	// Unknown API paths get the shared error format instead of the default text 404.
+	// Unknown API paths (and unsupported methods on known ones) get the shared error format.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		apperr.Write(w, r, apperr.ErrNotFound)
 	})
 
-	return middleware.Recover(middleware.Logger(mux))
+	return middleware.Recover(middleware.Logger(middleware.SecurityHeaders(mux)))
+}
+
+// ExamplePath fills path parameters with a syntactically valid ID, for tests.
+func (rt Route) ExamplePath(id string) string {
+	p := rt.Path
+	for _, param := range []string{"{id}", "{imageId}"} {
+		p = strings.ReplaceAll(p, param, id)
+	}
+	return p
 }

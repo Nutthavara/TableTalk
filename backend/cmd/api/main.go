@@ -64,6 +64,10 @@ func run() error {
 		Addr:              cfg.HTTPAddr,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
+		// Generous enough for multi-image uploads; bounds slow clients holding connections open.
+		ReadTimeout:  2 * time.Minute,
+		WriteTimeout: 2 * time.Minute,
+		IdleTimeout:  2 * time.Minute,
 	}
 
 	errCh := make(chan error, 1)
