@@ -74,9 +74,14 @@ func localTime(date, hhmm string) time.Time {
 // restaurant inserts a restaurant owned by alice, open 10:00–22:00 Bangkok, 2h cancellation notice.
 func (f *fixture) restaurant(capacity int) uuid.UUID {
 	f.t.Helper()
+	return f.restaurantWithNotice(capacity, 2)
+}
+
+func (f *fixture) restaurantWithNotice(capacity, noticeHours int) uuid.UUID {
+	f.t.Helper()
 	id, err := f.store.InsertRestaurant(f.ctx, model.Restaurant{
 		OwnerID: f.alice.UserID, Name: "Test", Capacity: capacity,
-		OpeningTime: 10 * 60, ClosingTime: 22 * 60, Timezone: "Asia/Bangkok", CancellationNoticeHours: 2,
+		OpeningTime: 10 * 60, ClosingTime: 22 * 60, Timezone: "Asia/Bangkok", CancellationNoticeHours: noticeHours,
 	})
 	if err != nil {
 		f.t.Fatal(err)

@@ -34,7 +34,12 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("DELETE /api/restaurants/{id}/images/{imageId}", required(rh.DeleteImage))
 	mux.Handle("GET /api/me/restaurants", required(rh.ListMine))
 
-	mux.Handle("POST /api/restaurants/{id}/reservations", required(d.Reservations.Create))
+	resv := d.Reservations
+	mux.Handle("POST /api/restaurants/{id}/reservations", required(resv.Create))
+	mux.Handle("GET /api/me/reservations", required(resv.ListMine))
+	mux.Handle("GET /api/reservations/{id}", required(resv.Get))
+	mux.Handle("PUT /api/reservations/{id}", required(resv.Update))
+	mux.Handle("DELETE /api/reservations/{id}", required(resv.Cancel))
 
 	if d.Uploads != nil {
 		mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", d.Uploads))

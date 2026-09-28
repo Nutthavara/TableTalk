@@ -23,6 +23,14 @@ var (
 		"The whole reservation must be within the restaurant's opening hours.")
 	ErrInsufficientCapacity = apperr.New(http.StatusConflict, "INSUFFICIENT_CAPACITY",
 		"Not enough seats are available for the selected time.")
+	ErrReservationNotFound  = apperr.New(http.StatusNotFound, "RESERVATION_NOT_FOUND", "Reservation not found.")
+	ErrNotReservationOwner  = apperr.New(http.StatusForbidden, "FORBIDDEN", "This reservation belongs to another user.")
+	ErrReservationNotActive = apperr.New(http.StatusConflict, "RESERVATION_NOT_ACTIVE",
+		"This reservation has already been cancelled.")
+	ErrCancellationDeadlinePassed = apperr.New(http.StatusConflict, "CANCELLATION_DEADLINE_PASSED",
+		"It is too late to cancel this reservation under the restaurant's cancellation policy.")
+	ErrEditDeadlinePassed = apperr.New(http.StatusConflict, "EDIT_DEADLINE_PASSED",
+		"It is too late to change this reservation under the restaurant's cancellation policy.")
 )
 
 // ReservationInput uses the restaurant's local date and wall-clock times; the service converts them
@@ -73,9 +81,140 @@ func (s *ReservationService) Create(ctx context.Context, user auth.Identity, res
 			EndAt:        end,
 		})
 		created.RestaurantName, created.RestaurantTimezone = restaurant.Name, restaurant.Timezone
+		created.CancellationNoticeHours = restaurant.CancellationNoticeHours
 		return err
 	})
 	return created, err
+}
+
+// Get returns a reservation only to the user who made it.
+func (s *ReservationService) Get(ctx context.Context, user auth.Identity, id uuid.UUID) (model.Reservation, error) {
+	r, err := s.store.GetReservation(ctx, id)
+	if errors.Is(err, repository.ErrNotFound) {
+		return model.Reservation{}, ErrReservationNotFound
+	}
+	if err != nil {
+		return model.Reservation{}, err
+	}
+	if r.UserID != user.UserID {
+		return model.Reservation{}, ErrNotReservationOwner
+	}
+	return r, nil
+}
+
+// CanModify reports whether the reservation can still be edited or cancelled right now.
+// It is informational for clients; Update and Cancel enforce the same rule themselves.
+func (s *ReservationService) CanModify(r model.Reservation) bool {
+	return r.Status == model.ReservationActive && !s.now().After(r.ModificationDeadline())
+}
+
+type ListReservationsParams struct {
+	Filter   string
+	Page     int
+	PageSize int
+}
+
+type ReservationPage struct {
+	Items    []model.Reservation
+	Page     int
+	PageSize int
+	Total    int
+}
+
+// ListMine returns the authenticated user's reservations. Filter is upcoming (default), past or cancelled.
+func (s *ReservationService) ListMine(ctx context.Context, user auth.Identity, p ListReservationsParams) (ReservationPage, error) {
+	filter := repository.ReservationFilter(p.Filter)
+	if p.Filter == "" {
+		filter = repository.FilterUpcoming
+	}
+	details := map[string]string{}
+	if !repository.ValidReservationFilter(filter) {
+		details["filter"] = `Filter must be "upcoming", "past" or "cancelled".`
+	}
+	if p.Page < 1 {
+		details["page"] = "Page must be 1 or greater."
+	}
+	if p.PageSize < 1 || p.PageSize > MaxPageSize {
+		details["page_size"] = "Page size must be between 1 and 50."
+	}
+	if len(details) > 0 {
+		return ReservationPage{}, apperr.Validation(details)
+	}
+
+	items, total, err := s.store.ListUserReservations(ctx, user.UserID, filter, s.now(), p.PageSize, (p.Page-1)*p.PageSize)
+	if err != nil {
+		return ReservationPage{}, err
+	}
+	return ReservationPage{Items: items, Page: p.Page, PageSize: p.PageSize, Total: total}, nil
+}
+
+// Update changes party size, date and times of the user's own ACTIVE reservation, applying every
+// creation rule with the reservation itself excluded from the capacity check. Edits are allowed only
+// until the cancellation deadline, so the policy cannot be bypassed by moving a booking and then
+// cancelling it.
+func (s *ReservationService) Update(ctx context.Context, user auth.Identity, id uuid.UUID, in ReservationInput) (model.Reservation, error) {
+	if details := validateReservationInput(in); len(details) > 0 {
+		return model.Reservation{}, apperr.Validation(details)
+	}
+	err := s.inReservationTx(ctx, user, id, func(q *repository.Queries, restaurant model.Restaurant, current model.Reservation) error {
+		if s.now().After(current.ModificationDeadline()) {
+			return ErrEditDeadlinePassed
+		}
+		start, end, err := s.checkBookable(ctx, q, restaurant, in, current.ID)
+		if err != nil {
+			return err
+		}
+		return q.UpdateReservation(ctx, current.ID, in.PartySize, start, end)
+	})
+	if err != nil {
+		return model.Reservation{}, err
+	}
+	return s.Get(ctx, user, id)
+}
+
+// Cancel marks the user's own reservation CANCELLED if it is at or before
+// start_at - cancellation_notice_hours. The row is kept for history.
+func (s *ReservationService) Cancel(ctx context.Context, user auth.Identity, id uuid.UUID) (model.Reservation, error) {
+	err := s.inReservationTx(ctx, user, id, func(q *repository.Queries, _ model.Restaurant, current model.Reservation) error {
+		now := s.now()
+		if now.After(current.ModificationDeadline()) {
+			return ErrCancellationDeadlinePassed
+		}
+		return q.CancelReservation(ctx, current.ID, now)
+	})
+	if err != nil {
+		return model.Reservation{}, err
+	}
+	return s.Get(ctx, user, id)
+}
+
+// inReservationTx locks the restaurant and then the reservation (always in that order), verifies the
+// caller owns the ACTIVE reservation, and runs fn with the locked rows.
+func (s *ReservationService) inReservationTx(ctx context.Context, user auth.Identity, id uuid.UUID,
+	fn func(q *repository.Queries, restaurant model.Restaurant, current model.Reservation) error) error {
+	// restaurant_id never changes, so it is safe to read it before taking the locks.
+	existing, err := s.Get(ctx, user, id)
+	if err != nil {
+		return err
+	}
+	return s.store.InTx(ctx, func(q *repository.Queries) error {
+		restaurant, err := q.LockRestaurant(ctx, existing.RestaurantID)
+		if err != nil {
+			return err
+		}
+		current, err := q.LockReservation(ctx, id)
+		if err != nil {
+			return err
+		}
+		if current.UserID != user.UserID {
+			return ErrNotReservationOwner
+		}
+		if current.Status != model.ReservationActive {
+			return ErrReservationNotActive
+		}
+		current.CancellationNoticeHours = restaurant.CancellationNoticeHours
+		return fn(q, restaurant, current)
+	})
 }
 
 // checkBookable applies every reservation rule against a locked restaurant and returns the UTC
