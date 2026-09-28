@@ -24,4 +24,8 @@ type Reservation struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	CancelledAt  *time.Time
+
+	// Denormalised from the restaurant for display; filled by queries that join restaurants.
+	RestaurantName     string
+	RestaurantTimezone string
 }

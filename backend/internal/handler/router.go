@@ -8,9 +8,10 @@ import (
 )
 
 type Deps struct {
-	DB          Pinger
-	Auth        *middleware.Authenticator
-	Restaurants *RestaurantHandler
+	DB           Pinger
+	Auth         *middleware.Authenticator
+	Restaurants  *RestaurantHandler
+	Reservations *ReservationHandler
 	// Uploads serves stored images in development (local storage).
 	Uploads http.Handler
 }
@@ -32,6 +33,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.Handle("POST /api/restaurants/{id}/images", required(rh.AddImages))
 	mux.Handle("DELETE /api/restaurants/{id}/images/{imageId}", required(rh.DeleteImage))
 	mux.Handle("GET /api/me/restaurants", required(rh.ListMine))
+
+	mux.Handle("POST /api/restaurants/{id}/reservations", required(d.Reservations.Create))
 
 	if d.Uploads != nil {
 		mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", d.Uploads))

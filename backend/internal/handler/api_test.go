@@ -48,10 +48,11 @@ func newTestAPI(t *testing.T) *testAPI {
 	}
 	signer := authtest.NewSigner(t)
 	router := handler.NewRouter(handler.Deps{
-		DB:          db,
-		Auth:        middleware.NewAuthenticator(signer.Verifier(), store),
-		Restaurants: handler.NewRestaurantHandler(service.NewRestaurantService(store, files, time.Now)),
-		Uploads:     files.Handler(),
+		DB:           db,
+		Auth:         middleware.NewAuthenticator(signer.Verifier(), store),
+		Restaurants:  handler.NewRestaurantHandler(service.NewRestaurantService(store, files, time.Now)),
+		Reservations: handler.NewReservationHandler(service.NewReservationService(store, time.Now)),
+		Uploads:      files.Handler(),
 	})
 	return &testAPI{
 		t: t, router: router, signer: signer, db: db,

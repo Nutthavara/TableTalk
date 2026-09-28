@@ -51,10 +51,11 @@ func run() error {
 	}
 
 	router := handler.NewRouter(handler.Deps{
-		DB:          pool,
-		Auth:        middleware.NewAuthenticator(verifier, store),
-		Restaurants: handler.NewRestaurantHandler(service.NewRestaurantService(store, files, time.Now)),
-		Uploads:     files.Handler(),
+		DB:           pool,
+		Auth:         middleware.NewAuthenticator(verifier, store),
+		Restaurants:  handler.NewRestaurantHandler(service.NewRestaurantService(store, files, time.Now)),
+		Reservations: handler.NewReservationHandler(service.NewReservationService(store, time.Now)),
+		Uploads:      files.Handler(),
 	})
 
 	srv := &http.Server{

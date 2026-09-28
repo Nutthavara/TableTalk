@@ -44,3 +44,22 @@ func (q *Queries) ListActiveReservationsEndingAfter(ctx context.Context, restaur
 		WHERE restaurant_id = $1 AND status = 'ACTIVE' AND end_at > $2
 		ORDER BY start_at`, restaurantID, t)
 }
+
+// ListOverlappingActiveReservations returns ACTIVE reservations whose [start_at, end_at) overlaps
+// [start, end), excluding excludeID (the reservation being edited; uuid.Nil when creating).
+// Call it after LockRestaurant in the same transaction so the result cannot change before insert.
+func (q *Queries) ListOverlappingActiveReservations(ctx context.Context, restaurantID uuid.UUID, start, end time.Time, excludeID uuid.UUID) ([]model.Reservation, error) {
+	return q.collectReservations(ctx, `
+		SELECT `+reservationColumns+` FROM reservations
+		WHERE restaurant_id = $1 AND status = 'ACTIVE'
+		  AND start_at < $3 AND end_at > $2
+		  AND id <> $4`, restaurantID, start, end, excludeID)
+}
+
+func (q *Queries) InsertReservation(ctx context.Context, r model.Reservation) (model.Reservation, error) {
+	return scanReservation(q.db.QueryRow(ctx, `
+		INSERT INTO reservations (restaurant_id, user_id, party_size, start_at, end_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING `+reservationColumns,
+		r.RestaurantID, r.UserID, r.PartySize, r.StartAt, r.EndAt))
+}
