@@ -1,10 +1,12 @@
 import Link from "next/link";
 
 import { logout } from "@/features/auth/actions";
+import { listRestaurants } from "@/features/restaurants/queries";
+import { formatRating, formatReviewCount } from "@/lib/format";
 import { api, ApiError } from "@/lib/api";
 import type { Me } from "@/types/api";
 
-// Temporary Phase 2 page to verify the Next.js → Keycloak → Go API flow; replaced by the restaurant list.
+// Temporary page to verify the Next.js → Keycloak → Go API flow; replaced when the designed UI lands.
 export default async function Home() {
   let me: Me | null = null;
   let error: string | null = null;
@@ -13,6 +15,8 @@ export default async function Home() {
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 401) error = err instanceof Error ? err.message : String(err);
   }
+
+  const restaurants = await listRestaurants({ sort: "rating" }).catch(() => null);
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 p-8">
@@ -33,6 +37,14 @@ export default async function Home() {
         </Link>
       )}
       {error && <p className="text-red-600">{error}</p>}
+      <h2 className="mt-4 text-lg font-medium">Restaurants ({restaurants?.total ?? "unavailable"})</h2>
+      <ul data-testid="restaurants">
+        {restaurants?.items.map((r) => (
+          <li key={r.id}>
+            {r.name} · {r.average_rating === null ? formatReviewCount(0) : `${formatRating(r.average_rating)} (${formatReviewCount(r.review_count)})`}
+          </li>
+        ))}
+      </ul>
     </main>
   );
 }

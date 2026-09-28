@@ -13,7 +13,7 @@ Browser ──► Next.js 16 (App Router, server-side BFF) ──Bearer JWT─�
 - **Access tokens stay on the Next.js server** in an encrypted, httpOnly session cookie. Browser JavaScript never receives them.
 - **Docker Compose runs Postgres and Keycloak.** The API and the web app run on your machine, so debugging and hot reload work normally.
 
-> **Status:** backend phases 1–7 and 9 are complete. The Next.js UI (phase 8) is waiting for the final design. Authentication (login and logout) already works end to end.
+> **Status:** backend phases 1–7 and 9 are complete. The Next.js UI (phase 8) is waiting for the final design. Authentication (login and logout) already works end to end, and the UI-independent frontend layer is in place (typed queries and Server Actions for every endpoint, plus user-facing error messages).
 
 ---
 
@@ -77,6 +77,7 @@ If you change `KEYCLOAK_PORT`, also update `OIDC_ISSUER_URL` here and `AUTH_KEYC
 | `AUTH_KEYCLOAK_SECRET` | `dev-only-tabletalk-web-secret` | OIDC client secret. Matches the realm import and is **for development only** |
 | `AUTH_KEYCLOAK_ISSUER` | `http://localhost:8080/realms/tabletalk` | Keycloak realm URL |
 | `API_BASE_URL` | `http://localhost:8081` | Go API. Only the Next.js server calls it |
+| `IMAGE_BASE_URL` | `http://localhost:8081` | Where images are served from (matches `PUBLIC_BASE_URL`). Used by `next/image`, which is allowed to fetch from localhost only in development |
 
 `.env` and `.env.local` are git-ignored. Never commit real secrets. Every secret in this repo is a development placeholder.
 
