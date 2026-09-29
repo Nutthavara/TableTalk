@@ -3,9 +3,15 @@ import "server-only";
 import { api } from "@/lib/api";
 import type { Page, Restaurant, RestaurantSort } from "@/types/api";
 
-export function listRestaurants({ sort = "rating", page = 1, pageSize = 12 }: { sort?: RestaurantSort; page?: number; pageSize?: number } = {}) {
-  const q = new URLSearchParams({ sort, page: String(page), page_size: String(pageSize) });
-  return api<Page<Restaurant>>(`/api/restaurants?${q}`, { auth: "optional" });
+export function listRestaurants({
+  q = "",
+  sort = "rating",
+  page = 1,
+  pageSize = 12,
+}: { q?: string; sort?: RestaurantSort; page?: number; pageSize?: number } = {}) {
+  const params = new URLSearchParams({ sort, page: String(page), page_size: String(pageSize) });
+  if (q.trim()) params.set("q", q.trim());
+  return api<Page<Restaurant>>(`/api/restaurants?${params}`, { auth: "optional" });
 }
 
 /** Includes is_owner and my_review_id for a signed-in viewer. */

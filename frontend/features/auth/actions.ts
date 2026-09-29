@@ -2,19 +2,9 @@
 
 import { redirect } from "next/navigation";
 
-import { signIn, signOut } from "@/auth";
+import { signOut } from "@/auth";
 import { keycloakIssuer } from "@/lib/keycloak";
 import { getIdToken } from "@/lib/session";
-
-/** Only same-origin relative paths are allowed as post-login destinations (prevents open redirects). */
-function safeRedirect(target: FormDataEntryValue | null): string {
-  const value = typeof target === "string" ? target : "";
-  return value.startsWith("/") && !value.startsWith("//") ? value : "/";
-}
-
-export async function login(formData: FormData) {
-  await signIn("keycloak", { redirectTo: safeRedirect(formData.get("callbackUrl")) });
-}
 
 /** Clears the local session and ends the Keycloak SSO session, so the next login asks for credentials. */
 export async function logout() {

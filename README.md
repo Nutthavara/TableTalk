@@ -13,7 +13,7 @@ Browser ──► Next.js 16 (App Router, server-side BFF) ──Bearer JWT─�
 - **Access tokens stay on the Next.js server** in an encrypted, httpOnly session cookie. Browser JavaScript never receives them.
 - **Docker Compose runs Postgres and Keycloak.** The API and the web app run on your machine, so debugging and hot reload work normally.
 
-> **Status:** backend phases 1–7 and 9 are complete. The Next.js UI (phase 8) is waiting for the final design. Authentication (login and logout) already works end to end, and the UI-independent frontend layer is in place (typed queries and Server Actions for every endpoint, plus user-facing error messages).
+> **Status:** phases 1–9 are complete, including the Next.js UI built from the TableTalk design (desktop and mobile). Phase 10 (final verification) remains; a Keycloak login theme matching the design is planned separately.
 
 ---
 
@@ -77,7 +77,6 @@ If you change `KEYCLOAK_PORT`, also update `OIDC_ISSUER_URL` here and `AUTH_KEYC
 | `AUTH_KEYCLOAK_SECRET` | `dev-only-tabletalk-web-secret` | OIDC client secret. Matches the realm import and is **for development only** |
 | `AUTH_KEYCLOAK_ISSUER` | `http://localhost:8080/realms/tabletalk` | Keycloak realm URL |
 | `API_BASE_URL` | `http://localhost:8081` | Go API. Only the Next.js server calls it |
-| `IMAGE_BASE_URL` | `http://localhost:8081` | Where images are served from (matches `PUBLIC_BASE_URL`). Used by `next/image`, which is allowed to fetch from localhost only in development |
 
 `.env` and `.env.local` are git-ignored. Never commit real secrets. Every secret in this repo is a development placeholder.
 
@@ -133,6 +132,8 @@ All timestamps are stored as `timestamptz` and returned by the API in UTC. Openi
 
 ## Running
 
+Pages: `/restaurants` (list, search, sort), `/restaurants/[id]` (detail, booking, reviews; owner mode for your own restaurant), `/my-reservations` (Upcoming / Past / Cancelled), `/my-reservations/[id]/edit`, `/my-restaurants`, `/my-restaurants/new`, `/my-restaurants/[id]/edit`. `/login` and `/register` redirect to Keycloak.
+
 ```bash
 make api    # Go API    → http://localhost:8081 (GET /healthz checks DB connectivity)
 make web    # Next.js   → http://localhost:3000
@@ -177,7 +178,7 @@ Every error uses one format:
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/api/me` | required | Current user |
-| GET | `/api/restaurants?sort=rating\|reviews&page=&page_size=` | optional | List restaurants (page size 1–50, default 12) |
+| GET | `/api/restaurants?q=&sort=rating\|reviews&page=&page_size=` | optional | List restaurants (page size 1–50, default 12). `q` matches names containing it, ignoring case |
 | GET | `/api/restaurants/{id}` | optional | Detail, with `is_owner` and `my_review_id` for signed-in users |
 | POST | `/api/restaurants` | required | Create (`multipart/form-data` with fields and one or more `images`) |
 | PUT | `/api/restaurants/{id}` | owner | Replace the editable fields (JSON, all fields required) |

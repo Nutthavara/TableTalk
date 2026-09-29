@@ -1,26 +1,77 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* TableTalk design tokens ("Warm table — paprika, linen & herb"). The design is light-only. */
+@theme {
+  --color-linen: #fbf7f1; /* page background */
+  --color-surface: #ffffff;
+  --color-sand: #f6f0e7; /* summaries, subtle fills */
+  --color-sand-2: #f1e9de; /* segmented controls */
+  --color-hover: #f3ece2;
+  --color-line: #d9ccbb; /* input & button borders */
+  --color-line-soft: #ede4d8; /* card borders */
+  --color-line-mid: #e6dccd;
+  --color-ink: #221c18;
+  --color-ink-2: #5b5049;
+  --color-ink-3: #6e625a;
+  --color-body: #463c36;
+  --color-faint: #b7a897;
+  --color-paprika: #bd4719; /* primary CTA */
+  --color-paprika-dark: #a13b13;
+  --color-peach: #fbe6dc;
+  --color-peach-ink: #9c3316;
+  --color-peach-line: #f2c9b6;
+  --color-herb: #245038; /* owner, success */
+  --color-herb-soft: #e1eee5;
+  --color-herb-ink: #1f4630;
+  --color-herb-line: #9cc3a9;
+  --color-saffron: #e3a327; /* stars only */
+  --color-saffron-soft: #fbefd5;
+  --color-saffron-ink: #7a5410;
+  --color-chili: #8f1d14; /* destructive, errors */
+  --color-chili-dark: #74160f;
+  --color-chili-soft: #fbe9e7;
+  --color-chili-line: #e9c3be;
+  --color-disabled: #e9e1d6;
+  --color-disabled-ink: #8a7f77;
+  --color-focus: #1f5fd1;
+
+  --font-sans: var(--font-figtree), var(--font-noto-thai), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-bricolage), var(--font-figtree), var(--font-noto-thai), sans-serif;
+
+  --shadow-card: 0 1px 2px rgba(34, 28, 24, 0.05), 0 6px 20px rgba(34, 28, 24, 0.05);
+  --shadow-card-hover: 0 2px 4px rgba(34, 28, 24, 0.06), 0 18px 40px rgba(34, 28, 24, 0.12);
+  --shadow-panel: 0 2px 4px rgba(34, 28, 24, 0.04), 0 24px 48px rgba(34, 28, 24, 0.08);
+  --shadow-dialog: 0 24px 64px rgba(34, 28, 24, 0.3);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    color-scheme: light;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    background: var(--color-linen);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  a {
+    color: var(--color-paprika-dark);
+  }
+  a:hover {
+    color: #7e2e0f;
+  }
+  dialog::backdrop {
+    background: rgba(34, 28, 24, 0.5);
+  }
 }

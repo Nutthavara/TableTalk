@@ -6,41 +6,30 @@ import { redirect } from "next/navigation";
 import type { ActionState } from "@/lib/action-state";
 import { toActionError } from "@/lib/action-state";
 import { api } from "@/lib/api";
-import { formFiles, formInt, formString } from "@/lib/form";
+import { setFlash } from "@/lib/flash";
 import { routes } from "@/lib/routes";
 import type { Restaurant } from "@/types/api";
 
-const textFields = ["name", "description", "opening_time", "closing_time", "timezone"] as const;
+export type RestaurantFields = {
+  name: string;
+  description: string;
+  capacity: number;
+  opening_time: string;
+  closing_time: string;
+  timezone: string;
+  cancellation_notice_hours: number;
+};
 
-function restaurantFields(fd: FormData) {
-  const fieldErrors: Record<string, string> = {};
-  const body = {
-    name: formString(fd, "name"),
-    description: formString(fd, "description"),
-    capacity: formInt(fd, "capacity", fieldErrors),
-    opening_time: formString(fd, "opening_time"),
-    closing_time: formString(fd, "closing_time"),
-    timezone: formString(fd, "timezone"),
-    cancellation_notice_hours: formInt(fd, "cancellation_notice_hours", fieldErrors),
-  };
-  return { body, fieldErrors };
-}
+const fieldNames = ["name", "description", "capacity", "opening_time", "closing_time", "timezone", "cancellation_notice_hours"] as const;
 
-function invalid(fieldErrors: Record<string, string>): ActionState<never> {
-  return { status: "error", code: "VALIDATION_ERROR", message: "Please check the highlighted fields.", fieldErrors };
-}
-
-/** Form fields: name, description, capacity, opening_time, closing_time, timezone, cancellation_notice_hours, images (≥1). */
-export async function createRestaurant(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const { fieldErrors } = restaurantFields(fd);
-  const images = formFiles(fd, "images");
-  if (images.length === 0) fieldErrors.images = "Please add at least one photo.";
-  if (Object.keys(fieldErrors).length > 0) return invalid(fieldErrors);
-
-  // Forward only the known fields, so nothing else the browser sent reaches the API.
+/**
+ * Creates the restaurant with its photos in one request (a restaurant always has at least one photo).
+ * Only the known fields and the "images" files are forwarded to the API.
+ */
+export async function createRestaurant(fd: FormData): Promise<ActionState> {
   const upload = new FormData();
-  for (const name of [...textFields, "capacity", "cancellation_notice_hours"]) upload.set(name, formString(fd, name));
-  for (const image of images) upload.append("images", image);
+  for (const name of fieldNames) upload.set(name, String(fd.get(name) ?? "").trim());
+  for (const file of fd.getAll("images")) if (file instanceof File && file.size > 0) upload.append("images", file);
 
   let created: Restaurant;
   try {
@@ -48,35 +37,36 @@ export async function createRestaurant(_prev: ActionState, fd: FormData): Promis
   } catch (err) {
     return toActionError(err);
   }
+  await setFlash({ message: `${created.name} is now live on TableTalk.` });
   redirect(routes.restaurant(created.id));
 }
 
-export async function updateRestaurant(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const { body, fieldErrors } = restaurantFields(fd);
-  if (Object.keys(fieldErrors).length > 0) return invalid(fieldErrors);
+export async function updateRestaurant(id: string, fields: RestaurantFields): Promise<ActionState> {
+  let updated: Restaurant;
   try {
-    await api<Restaurant>(`/api/restaurants/${encodeURIComponent(id)}`, { method: "PUT", body });
+    updated = await api<Restaurant>(`/api/restaurants/${encodeURIComponent(id)}`, { method: "PUT", body: fields });
   } catch (err) {
     return toActionError(err);
   }
-  redirect(routes.restaurant(id));
+  await setFlash({ message: `${updated.name} — changes saved.`, action: { label: "View page", href: routes.restaurant(id) } });
+  redirect(routes.myRestaurants());
 }
 
+/** Called from My Restaurants itself, so the page refreshes in place (the caller shows the toast). */
 export async function deleteRestaurant(id: string): Promise<ActionState> {
   try {
     await api(`/api/restaurants/${encodeURIComponent(id)}`, { method: "DELETE" });
   } catch (err) {
     return toActionError(err);
   }
-  redirect(routes.myRestaurants());
+  refresh();
+  return { status: "success" };
 }
 
-/** Form field: images (one or more files). */
-export async function addRestaurantImages(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const images = formFiles(fd, "images");
-  if (images.length === 0) return invalid({ images: "Please choose at least one photo." });
+/** Form field: images (one or more files). Takes effect immediately. */
+export async function addRestaurantImages(id: string, fd: FormData): Promise<ActionState> {
   const upload = new FormData();
-  for (const image of images) upload.append("images", image);
+  for (const file of fd.getAll("images")) if (file instanceof File && file.size > 0) upload.append("images", file);
   try {
     await api(`/api/restaurants/${encodeURIComponent(id)}/images`, { method: "POST", body: upload });
   } catch (err) {
