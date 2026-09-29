@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -210,16 +211,27 @@ var restaurantOrderBy = map[RestaurantSort]string{
 	SortMostReviewed:  `s.review_count DESC, ROUND(s.avg_rating, 1) DESC NULLS LAST, r.id ASC`,
 }
 
-func (q *Queries) ListRestaurants(ctx context.Context, sort RestaurantSort, limit, offset int) ([]model.Restaurant, error) {
+// ListRestaurants returns one page of restaurants. A non-empty search matches names containing it,
+// ignoring case; LIKE wildcards in the search are matched literally.
+func (q *Queries) ListRestaurants(ctx context.Context, sort RestaurantSort, search string, limit, offset int) ([]model.Restaurant, error) {
 	orderBy, ok := restaurantOrderBy[sort]
 	if !ok {
 		return nil, fmt.Errorf("unknown sort %q", sort)
 	}
-	return q.listRestaurants(ctx, restaurantSelect+` ORDER BY `+orderBy+` LIMIT $1 OFFSET $2`, limit, offset)
+	return q.listRestaurants(ctx, restaurantSelect+` WHERE `+nameMatches+` ORDER BY `+orderBy+` LIMIT $2 OFFSET $3`,
+		likePattern(search), limit, offset)
 }
 
-func (q *Queries) CountRestaurants(ctx context.Context) (int, error) {
+func (q *Queries) CountRestaurants(ctx context.Context, search string) (int, error) {
 	var n int
-	err := q.db.QueryRow(ctx, `SELECT COUNT(*) FROM restaurants`).Scan(&n)
+	err := q.db.QueryRow(ctx, `SELECT COUNT(*) FROM restaurants r WHERE `+nameMatches, likePattern(search)).Scan(&n)
 	return n, err
+}
+
+// nameMatches filters by $1, a pattern from likePattern ('%' matches every restaurant).
+const nameMatches = `r.name ILIKE $1 ESCAPE '\'`
+
+func likePattern(search string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search)
+	return "%" + escaped + "%"
 }

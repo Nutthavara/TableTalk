@@ -3,7 +3,9 @@ package handler_test
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -157,5 +159,52 @@ func TestListRestaurants_InvalidParams(t *testing.T) {
 	resp.decode(t, &empty)
 	if resp.Status != http.StatusOK || empty.Items == nil || empty.Total != 0 || empty.PageSize != 12 {
 		t.Fatalf("empty list: %d %s", resp.Status, resp.Body)
+	}
+}
+
+func TestListRestaurants_Search(t *testing.T) {
+	api := newTestAPI(t)
+	seedRatedRestaurants(t, api, map[string][]int{
+		"Baan Suan Thai Kitchen": {4},
+		"Thai Street Food":       {5},
+		"Trattoria Lupo":         {3},
+		"100% Vegan":             {},
+		"Noodle_Bar":             {},
+		"ร้านข้าวต้ม":            {},
+	})
+
+	for _, tc := range []struct {
+		q    string
+		want []string
+	}{
+		{"thai", []string{"Thai Street Food", "Baan Suan Thai Kitchen"}}, // case-insensitive, still sorted by rating
+		{"  THAI  ", []string{"Thai Street Food", "Baan Suan Thai Kitchen"}},
+		{"lupo", []string{"Trattoria Lupo"}},
+		{"%", []string{"100% Vegan"}}, // wildcards are matched literally
+		{"_", []string{"Noodle_Bar"}},
+		{"e_B", []string{"Noodle_Bar"}},
+		{"ข้าว", []string{"ร้านข้าวต้ม"}},
+		{"sushi", []string{}},
+	} {
+		t.Run(tc.q, func(t *testing.T) {
+			var got listResp
+			resp := api.do(http.MethodGet, "/api/restaurants?page_size=50&q="+url.QueryEscape(tc.q), nil, nil)
+			if resp.Status != http.StatusOK {
+				t.Fatalf("got %d %s", resp.Status, resp.Body)
+			}
+			resp.decode(t, &got)
+			if !slices.Equal(names(got.Items), tc.want) || got.Total != len(tc.want) {
+				t.Fatalf("q=%q: got %v (total %d), want %v", tc.q, names(got.Items), got.Total, tc.want)
+			}
+		})
+	}
+
+	if resp := api.do(http.MethodGet, "/api/restaurants?q="+strings.Repeat("a", 121), nil, nil); resp.Status != http.StatusBadRequest {
+		t.Fatalf("overlong search: got %d", resp.Status)
+	}
+	var all listResp
+	api.do(http.MethodGet, "/api/restaurants?q=", nil, nil).decode(t, &all)
+	if all.Total != 6 {
+		t.Fatalf("empty search must list everything, got %d", all.Total)
 	}
 }

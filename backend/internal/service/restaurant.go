@@ -405,6 +405,7 @@ const (
 
 type ListRestaurantsParams struct {
 	Sort     string
+	Search   string // case-insensitive substring of the name; empty lists everything
 	Page     int
 	PageSize int
 }
@@ -433,15 +434,19 @@ func (s *RestaurantService) List(ctx context.Context, p ListRestaurantsParams) (
 	if p.PageSize < 1 || p.PageSize > MaxPageSize {
 		details["page_size"] = fmt.Sprintf("Page size must be between 1 and %d.", MaxPageSize)
 	}
+	search := strings.TrimSpace(p.Search)
+	if utf8.RuneCountInString(search) > maxNameLength {
+		details["q"] = fmt.Sprintf("Search must be at most %d characters.", maxNameLength)
+	}
 	if len(details) > 0 {
 		return RestaurantPage{}, apperr.Validation(details)
 	}
 
-	total, err := s.store.CountRestaurants(ctx)
+	total, err := s.store.CountRestaurants(ctx, search)
 	if err != nil {
 		return RestaurantPage{}, err
 	}
-	items, err := s.store.ListRestaurants(ctx, sort, p.PageSize, (p.Page-1)*p.PageSize)
+	items, err := s.store.ListRestaurants(ctx, sort, search, p.PageSize, (p.Page-1)*p.PageSize)
 	if err != nil {
 		return RestaurantPage{}, err
 	}

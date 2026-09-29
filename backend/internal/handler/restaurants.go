@@ -126,7 +126,7 @@ func newPage[T any](items []T, page, pageSize, total int) pageJSON[T] {
 	return pageJSON[T]{Items: items, Page: page, PageSize: pageSize, Total: total, TotalPages: (total + pageSize - 1) / pageSize}
 }
 
-// List handles GET /api/restaurants?sort=rating|reviews&page=1&page_size=12.
+// List handles GET /api/restaurants?q=&sort=rating|reviews&page=1&page_size=12.
 func (h *RestaurantHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	details := map[string]string{}
@@ -137,7 +137,7 @@ func (h *RestaurantHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.svc.List(r.Context(), service.ListRestaurantsParams{Sort: q.Get("sort"), Page: page, PageSize: pageSize})
+	result, err := h.svc.List(r.Context(), service.ListRestaurantsParams{Sort: q.Get("sort"), Search: q.Get("q"), Page: page, PageSize: pageSize})
 	if err != nil {
 		apperr.Write(w, r, err)
 		return
