@@ -1,272 +1,249 @@
-# TableTalk — Restaurant Reservation & Review System
+# TableTalk — ระบบจองโต๊ะและรีวิวร้านอาหาร
 
-Anyone who signs in can open their own restaurants, book tables at other people's restaurants and review them. A single account can be both an owner and a customer. You own a restaurant when its `owner_id` matches your user ID. There are no roles.
+TableTalk คือเว็บสำหรับ**ค้นหาร้านอาหาร จองโต๊ะ และรีวิวร้าน**
 
-```
-Browser ──► Next.js 16 (App Router, server-side BFF) ──Bearer JWT──► Go REST API ──► PostgreSQL 18
-               │ ▲                                                      │
-               ▼ │ OIDC Authorization Code + PKCE                       │ verifies JWT via JWKS
-             Keycloak 26 ◄──────────────────────────────────────────────┘
-```
-
-- **The Go API is the only authority** for authorization and business rules. Frontend checks exist only to make the UI easier to use.
-- **Access tokens stay on the Next.js server** in an encrypted, httpOnly session cookie. Browser JavaScript never receives them.
-- **Docker Compose runs Postgres and Keycloak.** The API and the web app run on your machine, so debugging and hot reload work normally.
-
-> **Status:** phases 1–10 are complete, including the Next.js UI built from the TableTalk design (desktop and mobile) and a TableTalk-styled Keycloak login/register theme.
+- ทุกคนที่สมัครสมาชิกแล้ว **เปิดร้านของตัวเองได้** และ **จองหรือรีวิวร้านของคนอื่นได้** ในบัญชีเดียว ไม่ต้องสมัครแยก
+- ระบบไม่มีการแบ่งบทบาท (role) ใครสร้างร้านไหน คนนั้นคือเจ้าของร้านนั้น
 
 ---
 
-## Prerequisites
+## ระบบประกอบด้วยอะไรบ้าง
 
-| Tool | Version | Notes |
+| ส่วน | ทำหน้าที่ | เทคโนโลยี |
 |---|---|---|
-| Docker + Compose v2 | recent | Colima or Docker Desktop both work |
-| Go | 1.26.5+ | `go.mod` pins `toolchain go1.26.6`, and the `go` command downloads it automatically |
-| Node.js | 20.9+ | Needed by Next.js 16 |
-| make | any | Optional. Each target is a single command you can run by hand |
+| **หน้าเว็บ** (`frontend/`) | หน้าจอทั้งหมดที่ผู้ใช้เห็น | Next.js 16 |
+| **API** (`backend/`) | ตรวจกฎทุกอย่าง เช่น ที่นั่งพอไหม ใครแก้อะไรได้ | Go |
+| **ฐานข้อมูล** | เก็บข้อมูลร้าน การจอง และรีวิว | PostgreSQL 18 |
+| **ระบบล็อกอิน** | หน้า login, สมัครสมาชิก, ลืมรหัสผ่าน | Keycloak 26 |
+| **กล่องอีเมลจำลอง** | รับอีเมลรีเซ็ตรหัสผ่านตอนพัฒนา (ไม่ส่งออกจริง) | Mailpit |
 
-Ports used by default: **5432** (Postgres), **8080** (Keycloak), **8025** (Mailpit inbox), **8081** (Go API), **3000** (Next.js). Postgres and Keycloak ports can be changed in `.env`.
+```
+Browser ──► หน้าเว็บ (Next.js) ──► API (Go) ──► ฐานข้อมูล (PostgreSQL)
+                 │                     │
+                 └──── Keycloak ◄──────┘   (login และตรวจสอบตัวตน)
+```
 
-## Quick start
+---
+
+## ต้องติดตั้ง
+
+| โปรแกรม | เวอร์ชัน | หมายเหตุ |
+|---|---|---|
+| Docker + Docker Compose | ใหม่ | |
+| Go | 1.26.5 ขึ้นไป | |
+| Node.js | 20.9 ขึ้นไป | |
+| make | เวอร์ชันไหนก็ได้ | |
+
+---
+
+## เปิดระบบครั้งแรก (ทำครั้งเดียว)
 
 ```bash
-cp .env.example .env                          # root config: compose + Go API
-cp frontend/.env.example frontend/.env.local  # frontend config
-# Put a random value in AUTH_SECRET in frontend/.env.local:
-#   openssl rand -base64 33
+# 1. สร้างไฟล์ตั้งค่า
+cp .env.example .env
+cp frontend/.env.example frontend/.env.local
 
-make up          # start Postgres + Keycloak (Keycloak needs ~20–40 s on first start)
-make migrate     # apply database migrations
-make api         # terminal 1: Go API on http://localhost:8081
+# 2. สร้าง secret password แล้วนำไปใส่ใน AUTH_SECRET ของไฟล์ frontend/.env.local
+openssl rand -base64 33
+
+# 3. ติดตั้งแพ็กเกจของหน้าเว็บ
 cd frontend && npm install && cd ..
-make web         # terminal 2: Next.js on http://localhost:3000
 ```
 
-Open http://localhost:3000 and sign in as **alice / alice** or **bob / bob**. These are development users only. You can also register a new account on the Keycloak login page.
+## เปิดระบบ (ทำทุกครั้ง)
 
-## Environment variables
-
-### Root `.env` (Docker Compose and Go API)
-
-The Makefile loads this file, so every `make` target sees these values.
-
-| Variable | Default | Used by | Purpose |
-|---|---|---|---|
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `tabletalk` | compose | Database credentials (dev only) |
-| `POSTGRES_PORT` | `5432` | compose | Host port for Postgres |
-| `KEYCLOAK_PORT` | `8080` | compose | Host port for Keycloak. Also used in the token issuer URL |
-| `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` | `admin` | compose | Keycloak admin console login (dev only) |
-| `HTTP_ADDR` | `:8081` | API | Listen address |
-| `DATABASE_URL` | — | API, migrate | Postgres connection string (**required**) |
-| `TEST_DATABASE_URL` | — | tests | Database for backend tests. Tests are skipped when it is unset |
-| `OIDC_ISSUER_URL` | — | API | `http://localhost:8080/realms/tabletalk` (**required**). Must match the token's `iss` exactly |
-| `OIDC_AUDIENCE` | `tabletalk-api` | API | Required `aud` in access tokens |
-| `UPLOAD_DIR` | `./uploads` | API | Where images are stored (relative to `backend/`) |
-| `API_DOCS_ENABLED` | `false` | API | `true` serves Swagger UI at `/docs` (development) |
-| `PUBLIC_BASE_URL` | `http://localhost:8081` | API | Base URL used to build image URLs |
-
-If you change `KEYCLOAK_PORT`, also update `OIDC_ISSUER_URL` here and `AUTH_KEYCLOAK_ISSUER` in the frontend.
-
-### `frontend/.env.local`
-
-| Variable | Example | Purpose |
-|---|---|---|
-| `AUTH_SECRET` | random 32+ bytes | Encrypts the session cookie |
-| `AUTH_URL` | `http://localhost:3000` | Public URL of the web app |
-| `AUTH_KEYCLOAK_ID` | `tabletalk-web` | OIDC client ID |
-| `AUTH_KEYCLOAK_SECRET` | `dev-only-tabletalk-web-secret` | OIDC client secret. Matches the realm import and is **for development only** |
-| `AUTH_KEYCLOAK_ISSUER` | `http://localhost:8080/realms/tabletalk` | Keycloak realm URL |
-| `API_BASE_URL` | `http://localhost:8081` | Go API. Only the Next.js server calls it |
-
-`.env` and `.env.local` are git-ignored. Never commit real secrets. Every secret in this repo is a development placeholder.
-
-## Keycloak setup
-
-No manual setup is needed. On first start, Compose imports [`keycloak/realm-tabletalk.json`](keycloak/realm-tabletalk.json), which contains:
-
-- **Realm `tabletalk`**, with self-registration enabled and no application roles.
-- **Client `tabletalk-web`**, used by Next.js. It is a confidential client using the authorization code flow with PKCE (S256), with redirect URI `http://localhost:3000/*`.
-- **Client `tabletalk-dev-cli`**, a public client that allows the password grant. It exists so you can get tokens with `curl` during development. Do **not** keep it in production.
-- **An audience mapper on both clients**, which adds `aud: tabletalk-api` to access tokens. The API rejects any token without it.
-- **Users `alice` and `bob`**, whose passwords equal their usernames.
-
-- **Login theme `tabletalk`** (`keycloak/themes/tabletalk`, mounted read-only by Compose). It extends Keycloak's `keycloak.v2` theme, so every login flow keeps working; only the layout (`template.ftl`), wording (`messages/`) and look (`resources/css/tabletalk.css`) change. Keycloak runs in dev mode with theme caching off, so CSS and template edits show up on reload.
-
-- **Forgot password** is enabled. In development Keycloak sends the reset email over SMTP to **Mailpit** (a Compose service that never delivers mail outside); read it at http://localhost:8025. For production, change `smtpServer` in the realm to a real mail server.
-
-Admin console: http://localhost:8080/admin (`admin` / `admin`).
-
-Keycloak imports the realm only when it does not exist yet. To apply changes you made to the JSON, recreate the containers. This also **deletes all app data**:
+ใช้ terminal 2 หน้าต่าง โดยรันที่โฟลเดอร์หลักของโปรเจกต์
 
 ```bash
-make reset-infra && make up && make migrate
+# เปิดฐานข้อมูล, Keycloak และ Mailpit (Keycloak ใช้เวลาเริ่มประมาณ 20–40 วินาที)
+make up
+make migrate        # อัปเดตโครงสร้างฐานข้อมูล (รันซ้ำได้ ไม่มีผลเสีย)
+
+# terminal ที่ 1
+make api            # เปิด API
+
+# terminal ที่ 2
+make web            # เปิดหน้าเว็บ
 ```
 
-### Calling the API with curl
+จากนั้นเปิด **http://localhost:3000**
 
-```bash
-TOKEN=$(curl -s -d grant_type=password -d client_id=tabletalk-dev-cli \
-  -d username=alice -d password=alice \
-  http://localhost:8080/realms/tabletalk/protocol/openid-connect/token | jq -r .access_token)
+**บัญชีทดลอง:** `bob` / `bob` (และ `alice` / `alice`) หรือกด **Sign up** เพื่อสมัครบัญชีใหม่ได้
 
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/me
-```
+> บัญชีทดลองมีไว้สำหรับตอนพัฒนาเท่านั้น ห้ามใช้ใน production
 
-### How authentication works
+## ที่อยู่ที่ใช้บ่อย
 
-1. **Sign in:** Next.js (Auth.js v5) redirects to Keycloak using the authorization code flow with PKCE and state. It exchanges the code on the server and stores the tokens in an encrypted, chunked httpOnly cookie. `/api/auth/session` exposes no tokens.
-2. **Calling the API:** Server Components and Server Actions call the Go API with `Authorization: Bearer <access token>`. Tokens are refreshed shortly before they expire.
-3. **Verifying the token:** The Go API checks the RS256 signature against Keycloak's JWKS, then checks `iss`, `aud = tabletalk-api` and `exp`. It reads the user ID from `sub` and upserts the `users` profile row.
-4. **Identity:** `owner_id` and `user_id` always come from the verified token. JSON bodies reject unknown fields, so a client cannot send identity fields.
-5. **Sign out:** clears the session and ends the Keycloak SSO session.
-
-## Database and migrations
-
-The database is PostgreSQL 18 and the SQL migrations live in [`backend/migrations`](backend/migrations). They are embedded in the binary and run with [goose](https://github.com/pressly/goose), so you do not need to install goose.
-
-```bash
-make migrate                                   # apply all pending migrations
-make migrate-down                              # roll back the latest migration
-cd backend && go run ./cmd/migrate status      # show applied migrations
-```
-
-To add a migration, create `backend/migrations/0000N_description.sql` with `-- +goose Up` and `-- +goose Down` sections.
-
-All timestamps are stored as `timestamptz` and returned by the API in UTC. Opening hours are local wall-clock times in the restaurant's IANA `timezone` (default `Asia/Bangkok`).
-
-## Running
-
-Pages: `/restaurants` (list, search, sort), `/restaurants/[id]` (detail, booking, reviews; owner mode for your own restaurant), `/my-reservations` (Upcoming / Past / Cancelled), `/my-reservations/[id]/edit`, `/my-restaurants`, `/my-restaurants/new`, `/my-restaurants/[id]/edit`. `/login` and `/register` redirect to Keycloak.
-
-```bash
-make api    # Go API    → http://localhost:8081 (GET /healthz checks DB connectivity)
-make web    # Next.js   → http://localhost:3000
-```
-
-Uploaded images are written to `backend/uploads/` and served by the API at `/uploads/...`. Storage sits behind the `storage.Storage` interface, so you can replace the local implementation with S3, MinIO or GCS without changing the service code.
-
-## Tests
-
-The backend tests need Postgres running (`make up`). They use the `tabletalk_test` database, which Compose creates on first start. Each test package migrates its own schema, so no manual setup is needed.
-
-```bash
-make test                                   # go test -race ./... with TEST_DATABASE_URL from .env
-cd backend && go test ./internal/service/   # a single package (export TEST_DATABASE_URL first)
-make lint                                   # go vet + eslint
-```
-
-If `TEST_DATABASE_URL` is unset, tests that need the database are **skipped** rather than failing. Use `make test` so they always run.
-
-| Required test (spec §20) | Location |
+| อะไร | ที่อยู่ |
 |---|---|
-| 1–8 reservation rules (opening hours, past, capacity, adjacency, sweep line) | `backend/internal/service/reservation_test.go` |
-| 9–11 edit excludes itself; cancel before/after the deadline | `backend/internal/service/reservation_manage_test.go` |
-| 12, 15 owner cannot review own restaurant; rating must be 1–5 | `backend/internal/service/review_test.go`, `backend/internal/handler/reviews_test.go` |
-| 13 cannot modify another owner's restaurant | `backend/internal/handler/restaurants_test.go` |
-| 14 cannot modify another user's reservation | `backend/internal/service/reservation_manage_test.go`, `backend/internal/handler/reservations_test.go` |
-| 16 concurrent bookings and edits cannot exceed capacity | `backend/internal/service/reservation_test.go`, `reservation_manage_test.go` |
-| Every write route requires auth; forged identity fields are rejected | `backend/internal/handler/security_test.go` |
+| หน้าเว็บ | http://localhost:3000 |
+| API | http://localhost:8081 |
+| เอกสาร API (Swagger) | http://localhost:8081/docs |
+| กล่องอีเมลจำลอง (Mailpit) | http://localhost:8025 |
+| หน้าผู้ดูแล Keycloak | http://localhost:8080/admin (`admin` / `admin`) |
+| ฐานข้อมูล | `localhost:5432` ชื่อ DB, user และรหัสผ่านเป็น `tabletalk` ทั้งหมด (ใช้กับ DBeaver ได้) |
+
+## ปิดระบบ
+
+| ต้องการ | คำสั่ง |
+|---|---|
+| ปิด API หรือหน้าเว็บ | กด `Ctrl+C` ใน terminal นั้น |
+| ปิดฐานข้อมูลและ Keycloak (ข้อมูลยังอยู่) | `make down` |
+| **ลบข้อมูลทั้งหมด** แล้วเริ่มใหม่ | `make reset-infra` แล้วตามด้วย `make up` และ `make migrate` |
 
 ---
 
-## API reference
+## ใช้งานระบบได้อะไรบ้าง
 
-**Swagger UI:** http://localhost:8081/docs (the spec is at `/docs/swagger.yaml`, source `backend/api/swagger.yaml`, OpenAPI 3.1). It is served only when `API_DOCS_ENABLED=true` (set in `.env.example` for development). Use **Authorize** with a token from the curl command above to try requests. A test fails if the spec and the router's routes ever differ.
+| หน้า | ทำอะไรได้ |
+|---|---|
+| `/restaurants` | ดูรายการร้าน ค้นหาด้วยชื่อ เรียงตามคะแนนหรือจำนวนรีวิว |
+| `/restaurants/[id]` | ดูรายละเอียดร้าน จองโต๊ะ อ่านและเขียนรีวิว (ถ้าเป็นร้านของเราเอง จะเห็นปุ่มจัดการร้านแทน) |
+| `/my-reservations` | การจองของเรา แยกเป็น กำลังจะถึง / ผ่านไปแล้ว / ยกเลิกแล้ว |
+| `/my-reservations/[id]/edit` | แก้ไขการจอง |
+| `/my-restaurants` | ร้านที่เราเป็นเจ้าของ (ดู แก้ไข ลบ) |
+| `/my-restaurants/new` | เพิ่มร้านใหม่ |
 
-Every error uses one format:
+**ลืมรหัสผ่าน:** กด "Forgot password?" ในหน้า login ตอนพัฒนาอีเมลรีเซ็ตรหัสจะไปอยู่ที่ Mailpit (http://localhost:8025) ไม่ได้ส่งออกไปจริง
+
+---
+
+## กฎสำคัญของระบบ
+
+### การจอง
+- **capacity คือจำนวนคนที่ร้านรับได้พร้อมกัน** ไม่ได้นับเป็นโต๊ะ
+- จองได้เฉพาะ**เวลาในอนาคต** และต้อง**อยู่ในเวลาเปิดร้านทั้งช่วง**
+- ระบบเช็กว่า**ทุกนาที**ในช่วงที่จอง จำนวนคนรวมต้องไม่เกิน capacity
+  - ตัวอย่าง: ร้านรับได้ 10 คน มีคนจอง 17:00–17:30 ไว้ 6 คน และ 18:00–18:30 อีก 6 คน ถ้าเราจอง 17:00–19:00 จำนวน 4 คน **จองได้** เพราะไม่มีช่วงไหนเกิน 10 คนเลย
+- การจองที่เวลาต่อกันพอดี (เช่น 17:00–18:00 กับ 18:00–19:00) **ไม่นับว่าทับกัน**
+- ถ้ามีคนกดจองที่นั่งสุดท้ายพร้อมกัน ระบบให้จองได้แค่คนเดียว ไม่มีทางจองเกิน
+- **แก้ไขหรือยกเลิกการจองได้ก่อนเส้นตายเท่านั้น** เส้นตายคือเวลาเริ่มจองลบด้วยจำนวนชั่วโมงที่ร้านกำหนด (อย่างน้อย 2 ชั่วโมง) ตัวอย่าง: จองไว้ 18:00 และร้านกำหนด 2 ชั่วโมง → ต้องแก้หรือยกเลิกภายใน 16:00
+- การยกเลิก**ไม่ได้ลบข้อมูล** แค่เปลี่ยนสถานะเป็น "ยกเลิกแล้ว"
+
+### ร้านอาหาร
+- ร้านต้องมี**รูปอย่างน้อย 1 รูป** (สูงสุด 10 รูป รูปละไม่เกิน 5 MB รองรับ JPEG, PNG และ WebP)
+- เฉพาะ**เจ้าของร้าน**เท่านั้นที่แก้ไขหรือลบร้านได้
+- เปลี่ยน capacity หรือเวลาเปิดปิดไม่ได้ ถ้าจะทำให้การจองที่มีอยู่แล้วผิดกฎ
+- ลบร้านไม่ได้ ถ้ายังมีการจองที่ยังไม่ถึงเวลาหรือยังไม่จบ
+- ยังไม่รองรับร้านที่เปิดข้ามเที่ยงคืน
+
+### รีวิว
+- ให้คะแนนเป็นจำนวนเต็ม **1–5 ดาว** ความคิดเห็นจะเขียนหรือไม่ก็ได้
+- **1 คนรีวิวได้ 1 ครั้งต่อร้าน** (แก้ไขหรือลบรีวิวของตัวเองได้)
+- **เจ้าของร้านรีวิวร้านตัวเองไม่ได้**
+- ตอนนี้ยังไม่บังคับว่าต้องเคยจองร้านนั้นก่อนถึงจะรีวิวได้
+- คะแนนเฉลี่ยแสดงทศนิยม 1 ตำแหน่ง ร้านที่ยังไม่มีรีวิวจะแสดงว่า "No reviews yet" ไม่ใช่ 0 ดาว
+
+### เวลา
+- ทุกร้านมี timezone ของตัวเอง (ค่าเริ่มต้นคือ `Asia/Bangkok`) เวลาเปิดปิดและเวลาจองทั้งหมดคิดตาม timezone ของร้าน
+
+---
+
+## เอกสาร API (Swagger)
+
+เปิด **http://localhost:8081/docs** จะเห็นรายการ API ทั้งหมด และลองยิงได้จากหน้านั้นเลย
+
+**วิธีลองยิง API ที่ต้อง login:**
+
+1. ขอ token แล้ว copy ไว้ใน clipboard:
+   ```bash
+   curl -s -d grant_type=password -d client_id=tabletalk-dev-cli \
+     -d username=bob -d password=bob \
+     http://localhost:8080/realms/tabletalk/protocol/openid-connect/token | jq -r .access_token | pbcopy
+   ```
+2. ในหน้า Swagger กด **Authorize** วาง token (ไม่ต้องพิมพ์คำว่า `Bearer` นำหน้า) กด **Authorize** แล้วกด **Close**
+3. เลือก API ที่ต้องการ กด **Try it out** แล้วกด **Execute**
+
+> token มีอายุ **5 นาที** ถ้าได้ error 401 ให้ขอ token ใหม่
+>
+> หน้า Swagger เปิดเฉพาะเมื่อตั้ง `API_DOCS_ENABLED=true` ใน `.env` ซึ่ง `.env.example` ตั้งไว้ให้แล้ว ไฟล์ spec อยู่ที่ `backend/api/swagger.yaml`
+
+**รูปแบบ error** ทุกตัวหน้าตาเหมือนกัน:
 
 ```json
-{ "error": { "code": "INSUFFICIENT_CAPACITY", "message": "Not enough seats are available for the selected time.", "details": { "field": "message" } } }
+{ "error": { "code": "INSUFFICIENT_CAPACITY", "message": "Not enough seats are available for the selected time." } }
 ```
 
-`details` is present only for `VALIDATION_ERROR`.
+ถ้ากรอกข้อมูลผิด (`VALIDATION_ERROR`) จะมี `details` บอกด้วยว่าช่องไหนผิด
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/api/me` | required | Current user |
-| GET | `/api/restaurants?q=&sort=rating\|reviews&page=&page_size=` | optional | List restaurants (page size 1–50, default 12). `q` matches names containing it, ignoring case |
-| GET | `/api/restaurants/{id}` | optional | Detail, with `is_owner` and `my_review_id` for signed-in users |
-| POST | `/api/restaurants` | required | Create (`multipart/form-data` with fields and one or more `images`) |
-| PUT | `/api/restaurants/{id}` | owner | Replace the editable fields (JSON, all fields required) |
-| DELETE | `/api/restaurants/{id}` | owner | Delete (refused while unfinished ACTIVE reservations exist) |
-| POST | `/api/restaurants/{id}/images` | owner | Add images (multipart `images`) |
-| DELETE | `/api/restaurants/{id}/images/{imageId}` | owner | Remove an image (the last image cannot be removed) |
-| GET | `/api/me/restaurants` | required | Restaurants you own |
-| POST | `/api/restaurants/{id}/reservations` | required | Book: `{party_size, date: "YYYY-MM-DD", start_time: "HH:MM", end_time: "HH:MM"}` in the restaurant's local time |
-| GET | `/api/me/reservations?filter=upcoming\|past\|cancelled&page=&page_size=` | required | Your reservations |
-| GET | `/api/reservations/{id}` | booker | Reservation detail |
-| PUT | `/api/reservations/{id}` | booker | Edit (same body and rules as create) |
-| DELETE | `/api/reservations/{id}` | booker | **Cancels** the reservation (logical; the row is kept) and returns it |
-| GET | `/api/restaurants/{id}/reviews?page=&page_size=` | optional | Reviews, newest first |
-| POST | `/api/restaurants/{id}/reviews` | required, not owner | `{rating: 1–5, comment?}` |
-| PUT | `/api/reviews/{id}` | author | Edit review |
-| DELETE | `/api/reviews/{id}` | author | Delete review |
+---
 
-| Status | Codes |
-|---|---|
-| 400 | `VALIDATION_ERROR`, `PARTY_SIZE_EXCEEDS_CAPACITY`, `RESERVATION_IN_PAST`, `OUTSIDE_OPENING_HOURS` |
-| 401 | `UNAUTHORIZED` |
-| 403 | `FORBIDDEN`, `CANNOT_REVIEW_OWN_RESTAURANT` |
-| 404 | `NOT_FOUND`, `RESTAURANT_NOT_FOUND`, `IMAGE_NOT_FOUND`, `RESERVATION_NOT_FOUND`, `REVIEW_NOT_FOUND` |
-| 409 | `INSUFFICIENT_CAPACITY`, `CANCELLATION_DEADLINE_PASSED`, `EDIT_DEADLINE_PASSED`, `RESERVATION_NOT_ACTIVE`, `REVIEW_ALREADY_EXISTS`, `LAST_IMAGE`, `TOO_MANY_IMAGES`, `RESTAURANT_HAS_UPCOMING_RESERVATIONS`, `CONFLICTS_WITH_EXISTING_RESERVATIONS` |
-| 500 | `INTERNAL_ERROR` (details are logged, never returned) |
+## การทดสอบ (Tests)
 
-## Business rules and design decisions
+ต้องเปิดฐานข้อมูลไว้ก่อน (`make up`)
 
-### Reservations
-- **Capacity** is the number of people the restaurant can seat at once. There are no tables.
-- **Intervals** are half-open `[start_at, end_at)`, so 17:00–18:00 and 18:00–19:00 do not overlap.
-- **Capacity check.** The API loads the ACTIVE reservations that overlap the request and runs a sweep line over their start and end events. At equal times, departures are processed before arrivals. The request is accepted when `peak + party_size <= capacity`. This never adds up reservations that overlap the request but not each other.
-- **Concurrency.** Every write that affects a restaurant (create, edit or cancel a reservation, or edit the restaurant) first takes `SELECT … FOR UPDATE` on the restaurant row, inside a READ COMMITTED transaction. Two requests competing for the same seats therefore run one after the other, and the second sees the first's booking. Locks are always taken restaurant first, then reservation, so they cannot deadlock.
-- **Time.** The server clock decides what counts as the past. Bookings must start after now and lie entirely within opening hours on one local day.
-- **Cancellation** is allowed until and including `start_at − cancellation_notice_hours` (minimum 2 hours). It sets `status = CANCELLED` and `cancelled_at`. Nothing is deleted.
-
-### Reviews and ratings
-- One review per user per restaurant, enforced by a unique constraint that also covers concurrent submissions. Owners cannot review their own restaurant.
-- `average_rating` (1 decimal place) and `review_count` are computed live with `AVG` and `COUNT`. A restaurant without reviews returns `average_rating: null` ("No reviews yet").
-- **Sorting.**
-  - Highest Rating: `ROUND(avg, 1) DESC NULLS LAST, review_count DESC, id ASC`.
-  - Most Reviewed: `review_count DESC, ROUND(avg, 1) DESC NULLS LAST, id ASC`.
-
-  Ratings are compared at the displayed precision, so restaurants that both show 4.3 are ordered by the tie-breakers.
-
-### Assumptions (decided before implementation)
-| | Decision |
-|---|---|
-| A1 | Each restaurant has an IANA `timezone` (default `Asia/Bangkok`). Opening hours and booking times are interpreted in it |
-| A2 | No overnight opening hours in v1 (`closing_time > opening_time`). A booking must fall on one local day |
-| A3 | A reservation can be edited only while ACTIVE and only until the same deadline as cancellation. This prevents bypassing the policy by moving a booking and then cancelling it |
-| A4 | Changing capacity, hours or timezone is rejected (409) if an unfinished ACTIVE reservation would no longer fit. Customer bookings are never cancelled automatically |
-| A5 | Deleting a restaurant is rejected (409) while it has unfinished ACTIVE reservations. Otherwise it is hard-deleted along with its images, reviews and past reservations |
-| A6 | Any signed-in user who is not the owner may review. No completed reservation is required |
-| A7 | Owners may book their own restaurant |
-| A8 | Reading someone else's reservation returns 403 |
-| — | The review comment is optional (max 2000 characters). Capacity is capped at 10,000 and notice hours at 1 year, purely as sanity limits |
-| — | Images must be JPEG, PNG or WebP (detected from the content), at most 5 MB each and at most 10 per restaurant |
-
-## Project structure
-
-```
-backend/
-  cmd/api            HTTP server entry point
-  cmd/migrate        migration runner
-  internal/auth      JWT verification (go-oidc) and request identity
-  internal/middleware  auth (required and optional), security headers, logging, recovery
-  internal/handler   HTTP request and response mapping and the route table
-  internal/service   business rules: restaurants, reservations (sweep line), reviews
-  internal/repository  all SQL (pgx) and transactions
-  internal/storage   image storage interface and local-disk implementation
-  internal/apperr    typed errors and the shared error response
-  migrations         SQL migrations (embedded)
-frontend/            Next.js 16 App Router (Auth.js v5, Tailwind v4)
-keycloak/            realm import for development
-docker/postgres/     database init script (creates keycloak and tabletalk_test DBs)
+```bash
+make test     # รัน test ทั้งหมดของ API
+make lint     # ตรวจรูปแบบโค้ด (Go และหน้าเว็บ)
 ```
 
-## Security notes
+> ใช้ `make test` เสมอ ถ้ารัน `go test` เองโดยไม่ได้ตั้ง `TEST_DATABASE_URL` test ที่ใช้ฐานข้อมูลจะถูก**ข้ามไปเฉย ๆ** โดยไม่ fail ทำให้ดูเหมือนผ่าน
 
-- Ownership and authorization are checked in the service layer on every write. Hiding a button in the UI is never treated as authorization.
-- API responses send `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Cache-Control: no-store`. Uploaded images are validated by content and served with `nosniff`.
-- The API has no CORS configuration because only the Next.js server calls it, and it authenticates with bearer tokens rather than cookies.
-- Known v1 limitations: no rate limiting and no audit log.
+test ครอบคลุมกฎสำคัญทั้งหมด เช่น เวลาเปิดปิด, ห้ามจองย้อนหลัง, ที่นั่งไม่พอ, จองพร้อมกันหลายคน, เส้นตายการยกเลิก, เจ้าของห้ามรีวิวร้านตัวเอง และแก้ข้อมูลของคนอื่นไม่ได้ รายละเอียดอยู่ใน [ARCHITECTURE.md](ARCHITECTURE.md#testing-strategy)
+
+---
+
+## ค่าตั้งค่า (Environment variables)
+
+### `.env` (โฟลเดอร์หลัก ใช้กับ Docker และ API)
+
+| ตัวแปร | ค่าเริ่มต้น | ใช้ทำอะไร |
+|---|---|---|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `tabletalk` | user, รหัสผ่าน และชื่อฐานข้อมูล |
+| `POSTGRES_PORT` | `5432` | port ของฐานข้อมูล |
+| `KEYCLOAK_PORT` | `8080` | port ของ Keycloak |
+| `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` | `admin` | บัญชีผู้ดูแล Keycloak |
+| `MAILPIT_UI_PORT` | `8025` | port ของกล่องอีเมลจำลอง |
+| `HTTP_ADDR` | `:8081` | port ของ API |
+| `DATABASE_URL` | — | ที่อยู่ฐานข้อมูลที่ API ใช้ (**ต้องมี**) |
+| `TEST_DATABASE_URL` | — | ฐานข้อมูลสำหรับ test |
+| `OIDC_ISSUER_URL` | — | ที่อยู่ของ Keycloak realm (**ต้องมี** และต้องตรงกับใน token ทุกตัวอักษร) |
+| `OIDC_AUDIENCE` | `tabletalk-api` | ชื่อที่ token ต้องระบุว่าใช้กับ API นี้ |
+| `UPLOAD_DIR` | `./uploads` | โฟลเดอร์เก็บรูปร้าน |
+| `PUBLIC_BASE_URL` | `http://localhost:8081` | ใช้สร้างลิงก์รูปภาพ |
+| `API_DOCS_ENABLED` | `false` | `true` เพื่อเปิดหน้า Swagger ที่ `/docs` |
+
+> ถ้าเปลี่ยน `KEYCLOAK_PORT` ต้องแก้ `OIDC_ISSUER_URL` ในไฟล์นี้ และ `AUTH_KEYCLOAK_ISSUER` ของหน้าเว็บให้ตรงกันด้วย
+
+### `frontend/.env.local` (หน้าเว็บ)
+
+| ตัวแปร | ตัวอย่าง | ใช้ทำอะไร |
+|---|---|---|
+| `AUTH_SECRET` | ค่าสุ่ม (สร้างด้วย `openssl rand -base64 33`) | เข้ารหัส cookie ของการ login |
+| `AUTH_URL` | `http://localhost:3000` | ที่อยู่ของหน้าเว็บ |
+| `AUTH_KEYCLOAK_ID` | `tabletalk-web` | ชื่อ client ใน Keycloak |
+| `AUTH_KEYCLOAK_SECRET` | `dev-only-tabletalk-web-secret` | รหัสของ client (**ใช้เฉพาะตอนพัฒนา**) |
+| `AUTH_KEYCLOAK_ISSUER` | `http://localhost:8080/realms/tabletalk` | ที่อยู่ของ Keycloak realm |
+| `API_BASE_URL` | `http://localhost:8081` | ที่อยู่ของ API |
+
+> ไฟล์ `.env` และ `.env.local` **ไม่ถูก commit** ขึ้น git รหัสลับทุกตัวใน repo นี้เป็นค่าสำหรับพัฒนาเท่านั้น ห้ามใส่รหัสจริงลงใน repo
+
+---
+
+## โครงสร้างโฟลเดอร์
+
+```
+backend/                 API (Go)
+  api/swagger.yaml       เอกสาร API
+  cmd/api                จุดเริ่มต้นของ API
+  cmd/migrate            ตัวรัน migration
+  internal/handler       รับ request และส่ง response
+  internal/service       กฎทางธุรกิจทั้งหมด (การจอง, ร้าน, รีวิว)
+  internal/repository    คำสั่ง SQL ทั้งหมด
+  internal/auth          ตรวจ token จาก Keycloak
+  internal/storage       เก็บรูปภาพ
+  migrations             โครงสร้างฐานข้อมูล
+frontend/                หน้าเว็บ (Next.js)
+  app/                   หน้าต่าง ๆ ของเว็บ
+  features/              โค้ดแยกตามเรื่อง (ร้าน, การจอง, รีวิว)
+  components/            ชิ้นส่วนหน้าจอที่ใช้ซ้ำ
+keycloak/                ตั้งค่า realm และ theme ของหน้า login
+docker-compose.yml       ฐานข้อมูล, Keycloak, Mailpit
+```
+
+---
+
+## อ่านเพิ่มเติม
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md):** ระบบออกแบบอย่างไรและทำไม (algorithm การจอง, การกันจองซ้อน, data model และการตัดสินใจต่าง ๆ)
+- **[AGENTS.md](AGENTS.md):** คู่มือสำหรับคนหรือ AI ที่จะมาพัฒนาต่อ (conventions, กฎที่ห้ามทำพัง และปัญหาที่เคยเจอ)
