@@ -1,0 +1,294 @@
+/* TableTalk look for the Keycloak login theme (tokens match frontend/app/globals.css). */
+:root {
+  --tt-linen: #fbf7f1;
+  --tt-surface: #ffffff;
+  --tt-sand: #f6f0e7;
+  --tt-line: #d9ccbb;
+  --tt-line-soft: #ede4d8;
+  --tt-ink: #221c18;
+  --tt-ink-2: #5b5049;
+  --tt-ink-3: #6e625a;
+  --tt-paprika: #bd4719;
+  --tt-paprika-dark: #a13b13;
+  --tt-herb: #2f5d46;
+  --tt-chili: #8f1d14;
+  --tt-chili-soft: #fbe9e7;
+  --tt-focus: #1f5fd1;
+  --tt-sans: Figtree, "Noto Sans Thai", ui-sans-serif, system-ui, sans-serif;
+  --tt-display: "Bricolage Grotesque", Figtree, "Noto Sans Thai", sans-serif;
+
+  /* PatternFly variables used by the keycloak.v2 markup */
+  --pf-v5-global--FontFamily--text: var(--tt-sans);
+  --pf-v5-global--FontFamily--heading: var(--tt-display);
+  --pf-v5-global--link--Color: var(--tt-paprika-dark);
+  --pf-v5-global--link--Color--hover: #7e2e0f;
+  --pf-v5-global--primary-color--100: var(--tt-paprika);
+  --pf-v5-global--primary-color--200: var(--tt-paprika-dark);
+  --pf-v5-global--danger-color--100: var(--tt-chili);
+  --pf-v5-global--BackgroundColor--100: var(--tt-surface);
+}
+
+html,
+body.tt-body {
+  background: var(--tt-linen) !important;
+  color: var(--tt-ink);
+  font-family: var(--tt-sans);
+  -webkit-font-smoothing: antialiased;
+}
+body.tt-body {
+  margin: 0;
+  min-height: 100vh;
+}
+:focus-visible {
+  outline: 3px solid var(--tt-focus) !important;
+  outline-offset: 2px;
+}
+
+/* Layout ------------------------------------------------------------------ */
+.tt-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 640px) minmax(0, 1fr);
+  min-height: 100vh;
+}
+.tt-brand {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 48px 56px;
+  background: var(--tt-herb);
+  color: #fff;
+  overflow: hidden;
+}
+.tt-logo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--tt-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  text-decoration: none;
+}
+.tt-logo-dark,
+.tt-logo-dark:hover {
+  color: var(--tt-ink);
+  text-decoration: none;
+}
+.tt-plate {
+  position: absolute;
+  right: -60px;
+  top: 150px;
+  width: 520px;
+  height: 420px;
+}
+.tt-brand-copy {
+  position: relative;
+  max-width: 420px;
+}
+.tt-brand-copy h2 {
+  margin: 0 0 14px;
+  font-family: var(--tt-display);
+  font-size: 44px;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: #fff;
+}
+.tt-brand-copy p {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.55;
+  color: #d8e8dd;
+}
+.tt-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+}
+.tt-mobile-header {
+  display: none;
+}
+.tt-panel > main {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  grid-area: auto;
+}
+.tt-back {
+  display: inline-block;
+  margin-top: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tt-ink-2) !important;
+  text-decoration: none;
+}
+
+@media (max-width: 900px) {
+  .tt-shell {
+    grid-template-columns: 1fr;
+  }
+  .tt-brand {
+    display: none;
+  }
+  .tt-panel {
+    justify-content: flex-start;
+    padding: 0 16px 40px;
+  }
+  .tt-mobile-header {
+    display: flex;
+    align-self: stretch;
+    align-items: center;
+    height: 60px;
+    margin: 0 -16px 24px;
+    padding: 0 16px;
+    background: var(--tt-surface);
+    border-bottom: 1px solid var(--tt-line-soft);
+  }
+  .tt-mobile-header .tt-logo {
+    font-size: 20px;
+  }
+}
+
+/* Heading ----------------------------------------------------------------- */
+.tt-body .pf-v5-c-login__main-header {
+  display: block;
+  padding: 0 0 8px;
+  border-top: 0; /* keycloak.v2 draws a coloured card top border */
+}
+.tt-body #kc-page-title {
+  margin: 0;
+  font-family: var(--tt-display);
+  font-size: 36px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--tt-ink);
+}
+.tt-body .pf-v5-c-login__main-body,
+.tt-body .pf-v5-c-login__main-footer {
+  padding: 0;
+}
+.tt-body .pf-v5-c-login__main-footer-band {
+  margin-top: 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: 16px;
+  color: var(--tt-ink-2);
+}
+.tt-body .pf-v5-c-login__main-footer-band a {
+  font-weight: 700;
+}
+
+/* Forms ------------------------------------------------------------------- */
+.tt-body .pf-v5-c-form {
+  gap: 18px;
+}
+.tt-body .pf-v5-c-form__label-text,
+.tt-body .pf-v5-c-form__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tt-ink);
+}
+.tt-body .pf-v5-c-form-control {
+  --pf-v5-c-form-control--BorderRadius: 12px;
+  --pf-v5-c-form-control--before--BorderColor: transparent;
+  --pf-v5-c-form-control--after--BorderColor: transparent;
+  min-height: 52px;
+  border: 1.5px solid var(--tt-line);
+  border-radius: 12px;
+  background: var(--tt-surface);
+  font-size: 16px;
+}
+.tt-body .pf-v5-c-form-control::before,
+.tt-body .pf-v5-c-form-control::after {
+  display: none; /* PatternFly's own borders; ours is on the wrapper */
+}
+.tt-body .pf-v5-c-form-control:focus-within {
+  border-color: var(--tt-ink);
+  box-shadow: 0 0 0 3px rgba(31, 95, 209, 0.35);
+}
+.tt-body .pf-v5-c-form-control.pf-m-error {
+  border-color: var(--tt-chili);
+}
+.tt-body .pf-v5-c-form-control > input {
+  height: 49px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  outline: none !important; /* the wrapper shows focus */
+}
+.tt-body .pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
+  min-height: 52px;
+  border: 1.5px solid var(--tt-line);
+  border-left: 0;
+  border-radius: 0 12px 12px 0;
+  background: var(--tt-surface);
+  color: var(--tt-ink-2);
+}
+.tt-body .pf-v5-c-input-group .pf-v5-c-form-control {
+  border-radius: 12px 0 0 12px;
+}
+.tt-body .pf-v5-c-helper-text__item.pf-m-error,
+.tt-body .kc-feedback-text.pf-m-error {
+  color: var(--tt-chili);
+  font-weight: 600;
+}
+.tt-body .pf-v5-c-check__label {
+  font-size: 15px;
+  color: #463c36;
+}
+.tt-body .pf-v5-c-check__input {
+  accent-color: var(--tt-paprika);
+  width: 20px;
+  height: 20px;
+}
+
+/* Buttons ----------------------------------------------------------------- */
+.tt-body .pf-v5-c-button.pf-m-primary {
+  min-height: 54px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--tt-paprika);
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+}
+.tt-body .pf-v5-c-button.pf-m-primary:hover {
+  background: var(--tt-paprika-dark);
+}
+.tt-body .pf-v5-c-button.pf-m-secondary {
+  border: 1.5px solid var(--tt-line);
+  border-radius: 12px;
+  background: var(--tt-surface);
+  color: var(--tt-ink);
+  font-weight: 600;
+}
+
+/* Alerts ------------------------------------------------------------------ */
+.tt-body .pf-v5-c-alert {
+  border: 0;
+  border-radius: 14px;
+  box-shadow: none;
+  background: var(--tt-sand);
+  font-size: 14px;
+}
+.tt-body .pf-v5-c-alert.pf-m-danger {
+  background: var(--tt-chili-soft);
+  color: var(--tt-chili);
+}
+.tt-body .pf-v5-c-alert.pf-m-success {
+  background: #e1eee5;
+  color: #1f4630;
+}
+.tt-body .pf-v5-c-input-group .pf-v5-c-button.pf-m-control::after {
+  border: 0; /* PatternFly's underline on the show-password button */
+}

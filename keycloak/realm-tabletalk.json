@@ -1,11 +1,18 @@
 {
   "realm": "tabletalk",
   "displayName": "TableTalk",
+  "loginTheme": "tabletalk",
   "enabled": true,
   "registrationAllowed": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-  "resetPasswordAllowed": false,
+  "resetPasswordAllowed": true,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "no-reply@tabletalk.local",
+    "fromDisplayName": "TableTalk"
+  },
   "sslRequired": "none",
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 1800,
@@ -14,6 +21,7 @@
     {
       "clientId": "tabletalk-web",
       "name": "TableTalk Web (Next.js)",
+      "baseUrl": "http://localhost:3000/restaurants",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -69,6 +77,7 @@
   "users": [
     {
       "username": "alice",
+      "realmRoles": ["default-roles-tabletalk"],
       "email": "alice@example.com",
       "firstName": "Alice",
       "lastName": "Dev",
@@ -78,6 +87,7 @@
     },
     {
       "username": "bob",
+      "realmRoles": ["default-roles-tabletalk"],
       "email": "bob@example.com",
       "firstName": "Bob",
       "lastName": "Dev",

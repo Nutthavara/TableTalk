@@ -45,6 +45,8 @@ Dependencies are kept small on purpose:
    - `Optional` (public GETs) lets anonymous requests through, but **any token that is present must be valid**; a bad token is never downgraded to anonymous.
 7. **Sign out** clears the local session and redirects to Keycloak's end-session endpoint with `id_token_hint`.
 
+Login UI: the realm uses the `tabletalk` login theme (`keycloak/themes/tabletalk`), which extends `keycloak.v2`. It changes only the layout, the wording and the CSS, so the security of the flows (PKCE, sessions, reset password, MFA if enabled later) is still Keycloak's. Login and sign-up stay on Keycloak's pages instead of custom Next.js forms; that would need the password grant and the Admin API, which is weaker and much more work. The client's `baseUrl` drives the "Back to TableTalk" link.
+
 Keycloak clients:
 - `tabletalk-web`: confidential, used by Next.js.
 - `tabletalk-dev-cli`: public, password grant, for getting tokens with `curl` during development only. Remove it in production.
@@ -213,7 +215,6 @@ Final verification on a fresh stack (2026-09-29):
 
 ## Future work
 
-- A Keycloak login and registration theme matching the design (FreeMarker and CSS, mounted in docker-compose).
 - Rate limiting and an audit log.
 - Object storage (S3/MinIO) behind `storage.Storage`, plus image resizing or a CDN.
 - Denormalized rating columns or a materialized view if listing becomes slow. Keyset pagination for large lists.

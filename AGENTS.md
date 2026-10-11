@@ -16,7 +16,7 @@ One account can both own restaurants and book or review other people's restauran
 |---|---|
 | Phases 1–10 (infra, auth, restaurants, listing, reservations, edit/cancel, reviews, UI, security, docs/verification) | Done |
 | Search `?q=` on `GET /api/restaurants` | Done (the only backend change made while building the UI) |
-| Keycloak login/register theme matching the design | **Not started.** Agreed to do later. `/login` and `/register` currently redirect to Keycloak's default pages |
+| Keycloak login/register theme matching the design | Done: `keycloak/themes/tabletalk` (extends `keycloak.v2`), selected by `loginTheme` in the realm |
 | Known v1 limitations | No rate limiting, no audit log, no overnight opening hours, images on local disk |
 
 The UI was built from the Claude Design canvas at https://claude.ai/artifact/W6dGecSXgfpVon2kWXVzee (24 boards: desktop, mobile, states, dialogs). The UI is in English.
@@ -24,7 +24,7 @@ The UI was built from the Claude Design canvas at https://claude.ai/artifact/W6d
 ## Run, test and verify
 
 ```bash
-make up && make migrate        # Postgres :5432 + Keycloak :8080 (Keycloak needs ~20–40 s)
+make up && make migrate        # Postgres :5432 + Keycloak :8080 + Mailpit :8025 (Keycloak needs ~20–40 s)
 make api                       # Go API :8081
 make web                       # Next.js :3000   (dev users alice/alice, bob/bob)
 make test                      # go test -race ./... — needs Postgres running
@@ -113,6 +113,17 @@ Breaking any of these is a bug, even if the UI hides it.
 - Fonts: Bricolage Grotesque (display), Figtree (body), Noto Sans Thai.
 - Buttons: use `buttonClass(variant, size)`.
 - Dialogs: use the `Dialog` component (native `<dialog>`, which becomes a bottom sheet on mobile).
+
+## Keycloak theme (`keycloak/themes/tabletalk/login`)
+
+- **It extends `keycloak.v2`.** Override only what's needed: `template.ftl` (TableTalk brand panel plus form column; the copy changes by `pageId`, e.g. `"register"`), `messages/messages_en.properties` (wording) and `resources/css/tabletalk.css` (design tokens over PatternFly v5 classes). Keep the v2 page templates, so reset password, verify email and similar flows keep working.
+- **Setting changes on a running realm:** `realm-tabletalk.json` is imported only when the realm doesn't exist yet. Apply changes such as `loginTheme` or the client's `baseUrl` with `kcadm.sh` inside the container. Call `kcadm.sh` directly with `docker compose exec`; a `sh -c` wrapper may be blocked by a safety check. Avoid `make reset-infra` unless the owner approves.
+- **Checking it in a browser:** run `kc-theme.mjs` in the scratchpad; it covers the login page, a wrong password, a successful login, registration and mobile. Delete any test user it creates (Keycloak user plus `users` row).
+- **Users defined in the realm JSON must list `"realmRoles": ["default-roles-tabletalk"]`.** The import does not assign default roles to them, and without `manage-account` the Profile link (Keycloak Account Console) fails with 401. Users who sign up through the form get the roles automatically.
+- **Forgot password** emails go to Mailpit (inbox http://localhost:8025, API `GET /api/v1/messages`). The browser check is `forgot.mjs` in the scratchpad; it resets bob's password back to `bob`.
+- **Message files use Java MessageFormat:** write an apostrophe as `''`, or it disappears.
+- **The account menu has no Profile item on purpose** (owner's decision): Keycloak's Account Console isn't themed, and account editing is out of scope.
+- **Dev users:** alice/alice and bob/bob come from the realm import. alice's password was changed on this machine around 2026-10, so use bob for scripted logins or ask the owner.
 
 ## Environment gotchas seen on this machine
 

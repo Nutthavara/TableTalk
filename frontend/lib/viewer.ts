@@ -1,9 +1,8 @@
 import "server-only";
 
 import { auth } from "@/auth";
-import { keycloakIssuer } from "@/lib/keycloak";
 
-export type Viewer = { name: string; email?: string; initial: string; accountUrl: string } | null;
+export type Viewer = { name: string; email?: string; initial: string } | null;
 
 /** The signed-in user for UI purposes (names, menus). Authorization is always done by the API. */
 export async function getViewer(): Promise<Viewer> {
@@ -14,6 +13,5 @@ export async function getViewer(): Promise<Viewer> {
     name,
     email: session.user.email ?? undefined,
     initial: name.trim().charAt(0).toUpperCase(),
-    accountUrl: `${keycloakIssuer}/account`,
   };
 }

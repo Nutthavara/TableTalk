@@ -29,9 +29,6 @@ function MenuItems({ viewer, onNavigate }: { viewer: NonNullable<Viewer>; onNavi
           {viewer.email && <span className="truncate text-sm text-ink-3">{viewer.email}</span>}
         </div>
       </div>
-      <a role="menuitem" href={viewer.accountUrl} className={itemClass}>
-        Profile
-      </a>
       <Link role="menuitem" href={routes.myReservations()} className={itemClass} onClick={onNavigate}>
         My Reservations
       </Link>

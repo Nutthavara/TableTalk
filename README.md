@@ -13,7 +13,7 @@ Browser ──► Next.js 16 (App Router, server-side BFF) ──Bearer JWT─�
 - **Access tokens stay on the Next.js server** in an encrypted, httpOnly session cookie. Browser JavaScript never receives them.
 - **Docker Compose runs Postgres and Keycloak.** The API and the web app run on your machine, so debugging and hot reload work normally.
 
-> **Status:** phases 1–9 are complete, including the Next.js UI built from the TableTalk design (desktop and mobile). Phase 10 (final verification) remains; a Keycloak login theme matching the design is planned separately.
+> **Status:** phases 1–10 are complete, including the Next.js UI built from the TableTalk design (desktop and mobile) and a TableTalk-styled Keycloak login/register theme.
 
 ---
 
@@ -26,7 +26,7 @@ Browser ──► Next.js 16 (App Router, server-side BFF) ──Bearer JWT─�
 | Node.js | 20.9+ | Needed by Next.js 16 |
 | make | any | Optional. Each target is a single command you can run by hand |
 
-Ports used by default: **5432** (Postgres), **8080** (Keycloak), **8081** (Go API), **3000** (Next.js). Postgres and Keycloak ports can be changed in `.env`.
+Ports used by default: **5432** (Postgres), **8080** (Keycloak), **8025** (Mailpit inbox), **8081** (Go API), **3000** (Next.js). Postgres and Keycloak ports can be changed in `.env`.
 
 ## Quick start
 
@@ -89,6 +89,10 @@ No manual setup is needed. On first start, Compose imports [`keycloak/realm-tabl
 - **Client `tabletalk-dev-cli`**, a public client that allows the password grant. It exists so you can get tokens with `curl` during development. Do **not** keep it in production.
 - **An audience mapper on both clients**, which adds `aud: tabletalk-api` to access tokens. The API rejects any token without it.
 - **Users `alice` and `bob`**, whose passwords equal their usernames.
+
+- **Login theme `tabletalk`** (`keycloak/themes/tabletalk`, mounted read-only by Compose). It extends Keycloak's `keycloak.v2` theme, so every login flow keeps working; only the layout (`template.ftl`), wording (`messages/`) and look (`resources/css/tabletalk.css`) change. Keycloak runs in dev mode with theme caching off, so CSS and template edits show up on reload.
+
+- **Forgot password** is enabled. In development Keycloak sends the reset email over SMTP to **Mailpit** (a Compose service that never delivers mail outside); read it at http://localhost:8025. For production, change `smtpServer` in the realm to a real mail server.
 
 Admin console: http://localhost:8080/admin (`admin` / `admin`).
 
