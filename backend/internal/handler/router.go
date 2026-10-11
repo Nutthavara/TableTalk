@@ -16,6 +16,8 @@ type Deps struct {
 	Reviews      *ReviewHandler
 	// Uploads serves stored images in development (local storage).
 	Uploads http.Handler
+	// Docs serves Swagger UI at /docs and the spec at /docs/swagger.yaml.
+	Docs bool
 }
 
 type AuthMode int
@@ -78,6 +80,10 @@ func NewRouter(d Deps) http.Handler {
 
 	if d.Uploads != nil {
 		mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", d.Uploads))
+	}
+	if d.Docs {
+		mux.HandleFunc("GET /docs", DocsUI)
+		mux.HandleFunc("GET /docs/swagger.yaml", DocsSpec)
 	}
 
 	// Unknown API paths (and unsupported methods on known ones) get the shared error format.

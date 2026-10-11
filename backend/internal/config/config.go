@@ -14,16 +14,19 @@ type Config struct {
 	OIDCAudience  string
 	UploadDir     string
 	PublicBaseURL string
+	// APIDocsEnabled serves Swagger UI at /docs. Off unless explicitly enabled (development).
+	APIDocsEnabled bool
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:      getenv("HTTP_ADDR", ":8081"),
-		DatabaseURL:   os.Getenv("DATABASE_URL"),
-		OIDCIssuerURL: os.Getenv("OIDC_ISSUER_URL"),
-		OIDCAudience:  getenv("OIDC_AUDIENCE", "tabletalk-api"),
-		UploadDir:     getenv("UPLOAD_DIR", "./uploads"),
-		PublicBaseURL: strings.TrimRight(getenv("PUBLIC_BASE_URL", "http://localhost:8081"), "/"),
+		HTTPAddr:       getenv("HTTP_ADDR", ":8081"),
+		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		OIDCIssuerURL:  os.Getenv("OIDC_ISSUER_URL"),
+		OIDCAudience:   getenv("OIDC_AUDIENCE", "tabletalk-api"),
+		UploadDir:      getenv("UPLOAD_DIR", "./uploads"),
+		PublicBaseURL:  strings.TrimRight(getenv("PUBLIC_BASE_URL", "http://localhost:8081"), "/"),
+		APIDocsEnabled: os.Getenv("API_DOCS_ENABLED") == "true",
 	}
 
 	var missing []string

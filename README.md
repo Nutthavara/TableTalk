@@ -63,6 +63,7 @@ The Makefile loads this file, so every `make` target sees these values.
 | `OIDC_ISSUER_URL` | — | API | `http://localhost:8080/realms/tabletalk` (**required**). Must match the token's `iss` exactly |
 | `OIDC_AUDIENCE` | `tabletalk-api` | API | Required `aud` in access tokens |
 | `UPLOAD_DIR` | `./uploads` | API | Where images are stored (relative to `backend/`) |
+| `API_DOCS_ENABLED` | `false` | API | `true` serves Swagger UI at `/docs` (development) |
 | `PUBLIC_BASE_URL` | `http://localhost:8081` | API | Base URL used to build image URLs |
 
 If you change `KEYCLOAK_PORT`, also update `OIDC_ISSUER_URL` here and `AUTH_KEYCLOAK_ISSUER` in the frontend.
@@ -170,6 +171,8 @@ If `TEST_DATABASE_URL` is unset, tests that need the database are **skipped** ra
 ---
 
 ## API reference
+
+**Swagger UI:** http://localhost:8081/docs (the spec is at `/docs/swagger.yaml`, source `backend/api/swagger.yaml`, OpenAPI 3.1). It is served only when `API_DOCS_ENABLED=true` (set in `.env.example` for development). Use **Authorize** with a token from the curl command above to try requests. A test fails if the spec and the router's routes ever differ.
 
 Every error uses one format:
 

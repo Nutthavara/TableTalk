@@ -59,6 +59,7 @@ Breaking any of these is a bug, even if the UI hides it.
 8. **Every error uses one format**: `{"error":{"code","message","details?"}}`. Unexpected errors become a generic 500 and are logged. `details` is present only for `VALIDATION_ERROR`.
 9. **Timestamps are `timestamptz` and the API returns UTC.** Opening hours and booking inputs are wall-clock times in the restaurant's IANA `timezone`.
 10. **Every non-GET route is `Required` auth.** `handler/security_test.go` enforces this through the route table. Add new routes to `handler.Routes()`.
+11. **`backend/api/swagger.yaml` must match `handler.Routes()`.** `handler/docs_test.go` fails otherwise. When you add or change an endpoint, update the spec (paths, schemas, error codes) in the same change and lint it with `npx @redocly/cli lint backend/api/swagger.yaml`.
 
 ## Backend conventions (`backend/`)
 

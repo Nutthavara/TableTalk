@@ -58,6 +58,7 @@ func run() error {
 		Reservations: handler.NewReservationHandler(service.NewReservationService(store, time.Now)),
 		Reviews:      handler.NewReviewHandler(reviews),
 		Uploads:      files.Handler(),
+		Docs:         cfg.APIDocsEnabled,
 	})
 
 	srv := &http.Server{

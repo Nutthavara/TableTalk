@@ -1,0 +1,693 @@
+openapi: 3.1.0
+info:
+  title: TableTalk API
+  version: "1.0"
+  description: |
+    REST API for TableTalk, a restaurant reservation and review system.
+
+    **Authentication.** Endpoints marked with a lock need a Keycloak access token
+    (`Authorization: Bearer <token>`) whose audience includes `tabletalk-api`.
+    Public `GET` endpoints accept an optional token to personalise results
+    (`is_owner`, `my_review_id`, `is_mine`); an invalid token is always rejected with 401.
+
+    To try requests here in development, get a token and paste it into **Authorize**:
+
+    ```
+    curl -s -d grant_type=password -d client_id=tabletalk-dev-cli \
+      -d username=bob -d password=bob \
+      http://localhost:8080/realms/tabletalk/protocol/openid-connect/token | jq -r .access_token
+    ```
+
+    **Identity.** `owner_id` and `user_id` always come from the token. JSON bodies reject
+    unknown fields (400), so identity fields cannot be supplied by the client.
+
+    **Times.** Instants (`*_at`) are UTC. `date`, `start_time`, `end_time`, `opening_time` and
+    `closing_time` are wall-clock values in the restaurant's IANA `timezone`.
+
+    **Errors.** Every error uses the `Error` schema. `details` is present only for
+    `VALIDATION_ERROR`.
+servers:
+  - url: /
+    description: This server (the one serving these docs)
+
+tags:
+  - name: Account
+    description: The signed-in user.
+  - name: Restaurants
+    description: Discovery, and management by the owner.
+  - name: Reservations
+    description: Booking, editing and cancelling tables.
+  - name: Reviews
+    description: One review per user per restaurant.
+  - name: Health
+    description: Liveness of the API and its database.
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Health check (database reachable)
+      operationId: health
+      security: []
+      responses:
+        "200":
+          description: The API and database are up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        "503":
+          description: The database is unreachable.
+
+  /api/me:
+    get:
+      tags: [Account]
+      summary: Current user
+      operationId: getMe
+      responses:
+        "200":
+          description: The signed-in user, taken from the access token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/restaurants:
+    get:
+      tags: [Restaurants]
+      summary: List restaurants
+      description: |
+        Deterministic ordering:
+        - `rating`: `ROUND(avg,1) DESC NULLS LAST, review_count DESC, id ASC`
+        - `reviews`: `review_count DESC, ROUND(avg,1) DESC NULLS LAST, id ASC`
+      operationId: listRestaurants
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring of the name (`%`, `_` and `\` match literally).
+          schema: { type: string, maxLength: 120 }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [rating, reviews], default: rating }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: One page of restaurants.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RestaurantPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Restaurants]
+      summary: Create a restaurant (the caller becomes the owner)
+      description: Multipart form with the fields and at least one image, so a restaurant never exists without a photo.
+      operationId: createRestaurant
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, capacity, opening_time, closing_time, cancellation_notice_hours, images]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                description: { type: string, maxLength: 2000 }
+                capacity: { type: integer, minimum: 1, maximum: 10000 }
+                opening_time: { $ref: "#/components/schemas/TimeOfDay" }
+                closing_time: { $ref: "#/components/schemas/TimeOfDay" }
+                timezone: { type: string, default: Asia/Bangkok, description: IANA timezone }
+                cancellation_notice_hours: { type: integer, minimum: 2 }
+                images:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  description: JPEG, PNG or WebP (detected from content), at most 5 MB each.
+                  items: { type: string, format: binary }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            Location: { schema: { type: string }, description: URL of the new restaurant }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Restaurant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/restaurants/{id}:
+    parameters:
+      - $ref: "#/components/parameters/RestaurantId"
+    get:
+      tags: [Restaurants]
+      summary: Restaurant detail
+      operationId: getRestaurant
+      security: [{}, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: The restaurant. `my_review_id` is present when the signed-in viewer has reviewed it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Restaurant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Restaurants]
+      summary: Replace the editable fields (owner only)
+      description: |
+        Every field is required. Rejected with 409 `CONFLICTS_WITH_EXISTING_RESERVATIONS` when the new
+        capacity, hours or timezone would no longer fit an unfinished ACTIVE reservation.
+      operationId: updateRestaurant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RestaurantInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Restaurant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Restaurants]
+      summary: Delete a restaurant (owner only)
+      description: Refused with 409 `RESTAURANT_HAS_UPCOMING_RESERVATIONS` while unfinished ACTIVE reservations exist. Otherwise images, reviews and past reservations are deleted too.
+      operationId: deleteRestaurant
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/restaurants/{id}/images:
+    parameters:
+      - $ref: "#/components/parameters/RestaurantId"
+    post:
+      tags: [Restaurants]
+      summary: Add images (owner only)
+      operationId: addRestaurantImages
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [images]
+              properties:
+                images:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: binary }
+      responses:
+        "201":
+          description: The restaurant with its images. More than 10 images in total returns 409 `TOO_MANY_IMAGES`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Restaurant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/restaurants/{id}/images/{imageId}:
+    parameters:
+      - $ref: "#/components/parameters/RestaurantId"
+      - name: imageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Restaurants]
+      summary: Remove an image (owner only)
+      operationId: deleteRestaurantImage
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`LAST_IMAGE`: a restaurant must keep at least one image."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/me/restaurants:
+    get:
+      tags: [Restaurants]
+      summary: Restaurants owned by the caller
+      operationId: listMyRestaurants
+      responses:
+        "200":
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Restaurant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/restaurants/{id}/reservations:
+    parameters:
+      - $ref: "#/components/parameters/RestaurantId"
+    post:
+      tags: [Reservations]
+      summary: Book a table
+      description: |
+        Checked by the API in one transaction, with the restaurant row locked:
+        1. `party_size` ≤ capacity → else 400 `PARTY_SIZE_EXCEEDS_CAPACITY`
+        2. starts after the server's current time → else 400 `RESERVATION_IN_PAST`
+        3. whole interval within opening hours on one local day → else 400 `OUTSIDE_OPENING_HOURS`
+        4. at every instant of `[start, end)`, booked seats + `party_size` ≤ capacity → else 409 `INSUFFICIENT_CAPACITY`
+      operationId: createReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReservationInput" }
+      responses:
+        "201":
+          description: Booked.
+          headers:
+            Location: { schema: { type: string }, description: URL of the new reservation }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/me/reservations:
+    get:
+      tags: [Reservations]
+      summary: The caller's reservations
+      description: |
+        - `upcoming`: ACTIVE and not finished (includes in progress), soonest first
+        - `past`: ACTIVE and finished, latest first
+        - `cancelled`: CANCELLED, latest first
+      operationId: listMyReservations
+      parameters:
+        - name: filter
+          in: query
+          schema: { type: string, enum: [upcoming, past, cancelled], default: upcoming }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: One page of reservations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReservationPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/reservations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Reservations]
+      summary: Reservation detail (the booker only)
+      operationId: getReservation
+      responses:
+        "200":
+          description: The reservation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Reservations]
+      summary: Edit a reservation (the booker only)
+      description: |
+        Same rules as booking, with the reservation itself excluded from the capacity check.
+        Only while ACTIVE and until `start_at − cancellation_notice_hours` (else 409 `EDIT_DEADLINE_PASSED`
+        or `RESERVATION_NOT_ACTIVE`).
+      operationId: updateReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReservationInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Reservations]
+      summary: Cancel a reservation (the booker only)
+      description: |
+        Logical cancellation: the reservation is kept with `status: CANCELLED`. Allowed until and including
+        `start_at − cancellation_notice_hours` (else 409 `CANCELLATION_DEADLINE_PASSED`).
+      operationId: cancelReservation
+      responses:
+        "200":
+          description: The cancelled reservation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/restaurants/{id}/reviews:
+    parameters:
+      - $ref: "#/components/parameters/RestaurantId"
+    get:
+      tags: [Reviews]
+      summary: List reviews (newest first)
+      operationId: listReviews
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: One page of reviews.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Reviews]
+      summary: Review a restaurant
+      description: One review per user per restaurant (409 `REVIEW_ALREADY_EXISTS`). Owners cannot review their own restaurant (403 `CANNOT_REVIEW_OWN_RESTAURANT`).
+      operationId: createReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/reviews/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [Reviews]
+      summary: Edit a review (the author only)
+      operationId: updateReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Reviews]
+      summary: Delete a review (the author only)
+      operationId: deleteReview
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak access token for the `tabletalk` realm, audience `tabletalk-api`.
+
+  parameters:
+    RestaurantId:
+      name: id
+      in: path
+      required: true
+      description: Restaurant ID. A malformed ID returns 404.
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 50, default: 12 }
+
+  responses:
+    BadRequest:
+      description: |
+        Invalid input. Codes: `VALIDATION_ERROR` (with `details` per field), `PARTY_SIZE_EXCEEDS_CAPACITY`,
+        `RESERVATION_IN_PAST`, `OUTSIDE_OPENING_HOURS`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: Some fields are invalid.
+              details: { cancellation_notice_hours: Cancellation notice must be at least 2 hours. }
+    Unauthorized:
+      description: "`UNAUTHORIZED`: missing, invalid or expired token."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: "`FORBIDDEN` (not your resource) or `CANNOT_REVIEW_OWN_RESTAURANT`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: "`NOT_FOUND`, `RESTAURANT_NOT_FOUND`, `IMAGE_NOT_FOUND`, `RESERVATION_NOT_FOUND` or `REVIEW_NOT_FOUND`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: |
+        Business conflict: `INSUFFICIENT_CAPACITY`, `CANCELLATION_DEADLINE_PASSED`, `EDIT_DEADLINE_PASSED`,
+        `RESERVATION_NOT_ACTIVE`, `REVIEW_ALREADY_EXISTS`, `LAST_IMAGE`, `TOO_MANY_IMAGES`,
+        `RESTAURANT_HAS_UPCOMING_RESERVATIONS`, `CONFLICTS_WITH_EXISTING_RESERVATIONS`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              code: INSUFFICIENT_CAPACITY
+              message: Not enough seats are available for the selected time.
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: INSUFFICIENT_CAPACITY }
+            message: { type: string }
+            details:
+              type: object
+              additionalProperties: { type: string }
+              description: Per-field messages (VALIDATION_ERROR only).
+
+    TimeOfDay:
+      type: string
+      pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+      example: "18:00"
+
+    Me:
+      type: object
+      required: [id, username, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        display_name: { type: string }
+        email: { type: string }
+
+    RestaurantImage:
+      type: object
+      required: [id, url, position]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        position: { type: integer, description: 0 is the cover }
+
+    Restaurant:
+      type: object
+      required:
+        [id, owner_id, owner_name, name, description, capacity, opening_time, closing_time, timezone,
+         cancellation_notice_hours, images, average_rating, review_count, is_owner, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        owner_id: { type: string, format: uuid }
+        owner_name: { type: string }
+        name: { type: string }
+        description: { type: string }
+        capacity: { type: integer, description: People who can be seated at the same time }
+        opening_time: { $ref: "#/components/schemas/TimeOfDay" }
+        closing_time: { $ref: "#/components/schemas/TimeOfDay" }
+        timezone: { type: string, example: Asia/Bangkok }
+        cancellation_notice_hours: { type: integer, minimum: 2 }
+        images:
+          type: array
+          items: { $ref: "#/components/schemas/RestaurantImage" }
+        average_rating:
+          type: [number, "null"]
+          description: One decimal place; null when there are no reviews (not 0 stars).
+          example: 4.3
+        review_count: { type: integer }
+        is_owner: { type: boolean, description: Whether the signed-in viewer owns it }
+        my_review_id: { type: string, format: uuid, description: "Detail endpoint only, when the viewer has reviewed it" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    RestaurantInput:
+      type: object
+      additionalProperties: false
+      required: [name, description, capacity, opening_time, closing_time, timezone, cancellation_notice_hours]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+        capacity: { type: integer, minimum: 1, maximum: 10000 }
+        opening_time: { $ref: "#/components/schemas/TimeOfDay" }
+        closing_time: { $ref: "#/components/schemas/TimeOfDay" }
+        timezone: { type: string, example: Asia/Bangkok }
+        cancellation_notice_hours: { type: integer, minimum: 2 }
+
+    ReservationInput:
+      type: object
+      additionalProperties: false
+      required: [party_size, date, start_time, end_time]
+      properties:
+        party_size: { type: integer, minimum: 1 }
+        date: { type: string, format: date, description: Restaurant-local date, example: "2026-10-20" }
+        start_time: { $ref: "#/components/schemas/TimeOfDay" }
+        end_time: { $ref: "#/components/schemas/TimeOfDay" }
+
+    Reservation:
+      type: object
+      required:
+        [id, restaurant_id, restaurant_name, timezone, party_size, start_at, end_at, date, start_time, end_time,
+         status, created_at, updated_at, cancelled_at, cancellation_notice_hours, cancellation_deadline, can_modify]
+      properties:
+        id: { type: string, format: uuid }
+        restaurant_id: { type: string, format: uuid }
+        restaurant_name: { type: string }
+        timezone: { type: string }
+        party_size: { type: integer }
+        start_at: { type: string, format: date-time, description: UTC }
+        end_at: { type: string, format: date-time, description: UTC }
+        date: { type: string, format: date, description: Restaurant-local }
+        start_time: { $ref: "#/components/schemas/TimeOfDay" }
+        end_time: { $ref: "#/components/schemas/TimeOfDay" }
+        status: { type: string, enum: [ACTIVE, CANCELLED] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        cancelled_at: { type: [string, "null"], format: date-time }
+        cancellation_notice_hours: { type: integer }
+        cancellation_deadline: { type: string, format: date-time, description: Last instant to edit or cancel (UTC) }
+        can_modify: { type: boolean, description: Informational; the API enforces the rule on every change }
+
+    ReviewInput:
+      type: object
+      additionalProperties: false
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 2000 }
+
+    Review:
+      type: object
+      required: [id, restaurant_id, user_id, author_name, rating, comment, is_mine, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        restaurant_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        author_name: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        is_mine: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PageMeta:
+      type: object
+      required: [page, page_size, total, total_pages]
+      properties:
+        page: { type: integer }
+        page_size: { type: integer }
+        total: { type: integer }
+        total_pages: { type: integer }
+
+    RestaurantPage:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/Restaurant" } }
+
+    ReservationPage:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/Reservation" } }
+
+    ReviewPage:
+      allOf:
+        - $ref: "#/components/schemas/PageMeta"
+        - type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/Review" } }
